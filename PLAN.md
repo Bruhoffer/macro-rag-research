@@ -1,7 +1,7 @@
 # Macro RAG — Full Project Plan
 
 **Last updated:** 2026-06-05  
-**Status:** Phase 1 in progress — Docker pending user action  
+**Status:** Phase 1 ~95% complete — migration script written, awaiting run confirmation  
 **Project folder:** `email-ai/macro-rag/` (own git repo)  
 **Reference data:** `email-ai/raw-data/*.csv` (Delta Lake exports, read-only)  
 **Reference emails:** `email-ai/raw-emails/MM/DD/*.eml` (read-only)  
@@ -18,6 +18,26 @@ A local-first (later team-deployed) analytics and RAG system on top of the exist
 2. **Chat interface** — streaming Claude tool-use chat that answers analytical questions about macro data
 
 **Inspired by:** Anthropic's self-service analytics best practices (three failure modes: entity ambiguity, data staleness, retrieval failure).
+
+### Scale
+| Artifact type | Count |
+|---|---|
+| Key points (extracted + enriched) | ~40,784 |
+| Trade ideas (extracted + enriched) | ~4,885 |
+| Emails (unique, deduplicated) | ~5,822 |
+| Email chunks (parent-child retrieval) | ~73,767 |
+| Topic summaries | ~1,702 |
+| Trade summaries | ~508 |
+| Disagreements | ~3,010 |
+| Disagreement validations | ~8,043 |
+| Webinars | ~2,102 |
+| **Total indexed artifacts** | **~140,623** |
+
+### Resume-level capabilities
+- **Dual-path hybrid RAG** — structured key-point retrieval (Path 1) + email-chunk parent-child retrieval (Path 2)
+- **Low-latency hybrid search** — HNSW dense vector indexing (pgvector) + BM25 full-text search (PostgreSQL tsvector), fused via Reciprocal Rank Fusion (k=60)
+- **Autonomous LLM tool-routing** — Claude's tool-use API autonomously selects which retrieval path(s) to invoke and whether to run SQL aggregations or semantic search, based on query intent alone — no explicit user routing required
+- **Intraday macro-economic analysis** — designed for analysts doing morning reads of sell-side research; surfaces cross-bank sentiment disagreements, trade ideas, and topic summaries with clickable citation provenance
 
 ---
 
@@ -78,7 +98,7 @@ macro-rag/
 | `key_points_enrichments.csv` | ~43k | keypoint_id, topics[], geographies[], sentiment, time_reference, future_time_horizon |
 | `trade_ideas.csv` | ~7.5k | trade_idea_id, email_content_hash, email_sent_dt, source_org, trade_idea_text, trade_idea_citation, trade_idea_context |
 | `trade_ideas_enrichments.csv` | ~7.5k | trade_idea_id, asset_class, time_horizon, geographies[], legs (JSON), target_price, stop_price, trigger_condition |
-| `emails_parsed.csv` | ~637k (many SCD-2 dups) | email_content_hash, file_name, email_subject, email_from, email_sent_dt, email_body, email_body_length |
+| `emails_parsed.csv` | ~5,983 rows → ~5,822 unique after SCD-2 filter + dedup | email_content_hash, file_name, email_subject, email_from, email_sent_dt, email_body, email_body_length |
 | `topic_summaries.csv` | ~10.5k | topic, window_start, window_end, bullets[], source_orgs[], kp_count, label_map (JSON: [N]→key_point_id) |
 | `trade_summaries.csv` | ~? | group_key (asset_class), window_start, window_end, bullets[], label_map |
 | `disagreements.csv` | ~3k | disagreement_id, group_key (topic), geography, window_start, window_end, scale, n_banks, bank_positions (JSON) |
@@ -355,16 +375,31 @@ The Claude chat system selects paths via tool descriptions — no explicit class
 **Mode:** Streaming with tool use  
 **System prompt:** Describes the data model, what each tool does, approved entity lists (banks, topics, geographies), and analytical gotchas
 
+### Autonomous tool-routing
+
+Claude receives all 6 tool definitions and autonomously decides:
+- **Which tools to call** (zero, one, or multiple) based on question intent
+- **Which retrieval path** to invoke — semantic search vs SQL aggregation
+- **Whether to chain tools** — e.g. `get_stats` first for a distribution, then `search_key_points` to pull supporting evidence
+
+The analyst types a free-form question; no routing UI or mode-switching is needed.
+
 ### Tools
 
-| Tool | Input | Retrieval path | Returns |
-|---|---|---|---|
-| `search_key_points` | query, source_orgs?, topics?, geographies?, sentiment?, date_range?, time_reference? | Path 1 hybrid | top-20 key points with metadata |
-| `search_trade_ideas` | query, source_orgs?, asset_class?, geographies?, time_horizon?, date_range? | Path 1 hybrid | top-20 trade ideas with metadata |
-| `search_emails` | query, source_org?, date_range? | Path 2 chunk retrieval | matching email chunks + parent email |
-| `get_disagreements` | topic?, geography?, scale?, date_range?, confirmed_only=true | SQL structured | validated disagreements with bank_analysis |
-| `get_topic_summary` | topic, date? | SQL exact match | pre-computed bullets with clickable [N] footnotes |
-| `get_stats` | metric (count_by_bank, sentiment_distribution, topic_frequency), filters? | SQL aggregation | structured counts/distributions |
+| Tool | Retrieval path | Description |
+|---|---|---|
+| `search_key_points` | Path 1 — hybrid semantic + BM25 | Query key points by meaning + filters (bank, topic, geography, sentiment, date, time_reference) |
+| `search_trade_ideas` | Path 1 — hybrid semantic + BM25 | Query trade ideas by meaning + filters (bank, asset_class, geography, horizon, date) |
+| `search_emails` | Path 2 — chunk ANN → parent email | Broad email search; returns matching chunk + full parent email with chunk highlighted |
+| `get_disagreements` | SQL structured query | Fetch validated cross-bank disagreements, filtered by topic, geography, scale, date |
+| `get_topic_summary` | SQL exact match | Retrieve pre-computed daily bullet summaries with clickable `[N]` footnotes → key_point_id |
+| `get_stats` | SQL aggregation | Run COUNT/GROUP BY analytics: count_by_bank, sentiment_distribution, topic_frequency, asset_class_breakdown — returns structured numbers Claude can narrate |
+
+### What `get_stats` can answer (SQL aggregations)
+- "Which banks published the most bearish views on US rates this month?"
+- "What is the sentiment breakdown across topics for Goldman Sachs?"
+- "How many trade ideas per asset class were published in Q2?"
+- "Which topics saw the most cross-bank disagreements?"
 
 ### Provenance footer (every response)
 ```
@@ -539,61 +574,59 @@ You don't need to manually verify the UI — I'll check it during development.
 ### 🔄 Phase 1 — Postgres + Data Migration (IN PROGRESS)
 **Branch:** `phase/1-migration`  
 **Goal:** All data loaded into local Postgres, queryable  
-**Blocker:** User needs to open Docker Desktop before container can start
+**Note:** Docker exposed on **port 5433** (not 5432) — local Homebrew/Postgres.app was already bound to 5432.
 
 **Tasks:**
 - [x] Project folder structure created (`backend/`, `frontend/`, subdirs)
 - [x] `docker-compose.yml` — Postgres 16 + pgvector image (`pgvector/pgvector:pg16`)
-- [x] `.env` + `.env.example` — DATABASE_URL, API keys, data paths
-- [x] `backend/pyproject.toml` — all dependencies declared (FastAPI, SQLAlchemy, asyncpg, alembic, pgvector, pandas, openai, anthropic, tiktoken, tqdm)
+- [x] `.env` + `.env.example` — DATABASE_URL (port 5433), API keys, data paths
+- [x] `backend/pyproject.toml` — all dependencies declared
 - [x] `backend/.venv/` — virtual environment created and all packages installed
-- [ ] **NEXT: Open Docker Desktop → run `docker compose up -d`** ← waiting on user
-- [ ] Alembic init + `alembic.ini` config
-- [ ] `backend/app/db.py` — async SQLAlchemy engine + session factory
-- [ ] `backend/app/models/` — ORM models for all tables
-- [ ] `backend/alembic/versions/001_initial_schema.py` — CREATE TABLE + CREATE INDEX (pgvector, GIN, BM25 tsvector)
-- [ ] `backend/scripts/migrate.py` — reads all CSVs, deduplicates, joins enrichments, writes to Postgres
-  - emails: dedup by email_content_hash (keep status=ok, largest email_body_length)
-  - key_points_full: join key_points + key_points_enrichments on key_point_id/keypoint_id, add sentiment_score INT
-  - trade_ideas_full: join trade_ideas + trade_ideas_enrichments on trade_idea_id
-  - disagreements + disagreement_validations: load as-is (filter happens at query time)
-  - topic_summaries, trade_summaries: dedup by (topic/group_key, window_start, window_end) + parse label_map JSON
-  - webinars: dedup by file_name
-  - source_orgs, topics, geographies: load reference tables
-- [ ] Verify: row counts, spot-check joins, assert email_content_hash links hold
+- [x] Docker Desktop opened → `docker compose up -d` → container `macro_rag_db` healthy on port 5433
+- [x] Alembic init + `alembic.ini` config + `alembic/env.py`
+- [x] `backend/app/models/` — all 12 ORM models (emails, key_points_full, trade_ideas_full, email_chunks, disagreements, disagreement_validations, topic_summaries, trade_summaries, webinars, source_orgs, topics, geographies)
+- [x] `backend/alembic/versions/001_initial_schema.py` — CREATE EXTENSION vector + all tables + all indexes (GIN, btree)
+- [x] `alembic upgrade head` — all 12 tables created in DB, confirmed via `\dt`
+- [x] `backend/scripts/migrate.py` — reads all CSVs, deduplicates, joins enrichments, writes to Postgres with full stats reporting per table (csv_read → filtered → skipped → attempted → inserted → conflicts)
+- [ ] **NEXT: Run `python scripts/migrate.py`** and verify stats output
+- [ ] Verify: spot-check joins, assert email_content_hash links hold
 
-**Dedup logic for emails_parsed (637k rows → ~5k unique):**
-```python
-emails_df = (
-    df[df['status'] == 'ok']
-    .sort_values('email_body_length', ascending=False)
-    .drop_duplicates(subset=['email_content_hash'], keep='first')
-)
-```
+**Actual CSV sizes (after inspection):**
+| CSV | Raw rows | After filter | Notes |
+|---|---|---|---|
+| emails_parsed | 5,983 | ~5,822 | filter `load_end_dt IS NULL + status='ok'` + dedup by hash |
+| key_points | 42,181 | ~40,784 | same filter |
+| key_points_enrichments | 41,957 | ~40,119 | join key on `keypoint_id` (note: not `key_point_id`) |
+| trade_ideas | 5,256 | ~4,885 | same filter |
+| trade_ideas_enrichments | 5,048 | ~4,856 | |
+| disagreements | 3,010 | 3,010 | all current, no status col |
+| disagreement_validations | 8,045 | ~8,043 | exclude status='failed' only |
+| topic_summaries | — | ~1,702 | |
+| trade_summaries | — | ~508 | |
+| webinars | 7,455 | ~2,102 | |
 
 ---
 
-### 🔲 Phase 2 — Embeddings + Chunking
+### 🔲 Phase 2 — Embeddings
 **Branch:** `phase/2-embeddings`  
-**Goal:** All vectors populated, both retrieval paths ready
+**Goal:** All vectors populated, both retrieval paths ready  
+**Note:** Email chunking is already done inside `migrate.py` — chunks written to `email_chunks` table during Phase 1 migration. Phase 2 is just adding vectors to existing rows.
 
 **Tasks:**
-- [ ] `backend/scripts/embed.py` — generate embeddings for key_points_full
-  - Embed: `key_point_text + " Evidence: " + key_point_citation + " Context: " + key_point_context`
-  - Batch: 100 at a time, rate-limit aware
+- [ ] `backend/scripts/embed.py` — generate embeddings for all three tables
+  - **key_points_full**: `key_point_text + " Evidence: " + key_point_citation + " Context: " + key_point_context`
+  - **trade_ideas_full**: `trade_idea_text + " Evidence: " + trade_idea_citation + " Context: " + trade_idea_context`
+  - **email_chunks**: raw `chunk_text` only (no metadata mixed in)
   - Model: `text-embedding-3-small` (OpenAI, 1536-dim)
-  - Update `key_points_full.kp_embedding`
-- [ ] Same for trade_ideas_full (embed: text + citation + context)
-- [ ] `backend/scripts/chunk_emails.py` — generate email chunks (Path 2)
-  - For each unique email in `emails` table
-  - Split body by paragraph (`\n\n`), merge small, split large
-  - Target 200–350 tokens (estimate with `len(text.split()) * 1.3`)
-  - Insert into `email_chunks` table
-  - Generate embeddings for each chunk
-  - Infer `source_org` from key_points with same email_content_hash (most common source_org)
-- [ ] Populate tsvector columns (generated, done by DB trigger or update)
-- [ ] Build all HNSW + GIN + btree indexes
-- [ ] Verify: test a semantic search query end-to-end
+  - Batch: 100 at a time, rate-limit aware, resumable (skip rows where embedding IS NOT NULL)
+- [ ] Populate tsvector columns: `UPDATE key_points_full SET kp_fts = to_tsvector('english', coalesce(key_point_text,'') || ' ' || coalesce(key_point_citation,''))`
+- [ ] Build HNSW indexes (after embeddings populated — building on empty table is wasteful):
+  ```sql
+  CREATE INDEX ON key_points_full USING hnsw (kp_embedding vector_cosine_ops) WITH (m=16, ef_construction=64);
+  CREATE INDEX ON trade_ideas_full USING hnsw (ti_embedding vector_cosine_ops) WITH (m=16, ef_construction=64);
+  CREATE INDEX ON email_chunks USING hnsw (chunk_embedding vector_cosine_ops) WITH (m=16, ef_construction=64);
+  ```
+- [ ] Verify: run one semantic query (`SELECT key_point_text FROM key_points_full ORDER BY kp_embedding <=> '[...]' LIMIT 5`)
 
 ---
 
@@ -659,6 +692,51 @@ emails_df = (
 - [ ] Vercel deploy: frontend static files
 - [ ] Auth: simple API key header or Supabase Auth (TBD based on team need)
 - [ ] README with setup instructions
+
+---
+
+## Git Commit Convention
+
+**Rule: commit at every meaningful milestone — not just "when done".**
+
+A milestone is any of:
+- A file or module is written and the code runs without errors
+- A phase task is checked off
+- A bug is fixed
+- A schema migration is applied and verified
+- A script produces verified output
+
+### Commit message format
+```
+<type>: <short description>
+
+<optional body — what changed and why, not how>
+```
+
+**Types:** `feat`, `fix`, `chore`, `refactor`, `docs`
+
+### Examples
+```
+feat: add alembic migration 001 — creates all 12 tables + indexes
+
+feat: implement migrate.py with per-table stats reporting
+
+fix: change Docker host port to 5433 to avoid conflict with local Postgres
+
+feat: generate OpenAI embeddings for key_points_full and trade_ideas_full
+
+chore: add .gitignore entries for .env, __pycache__, data/postgres
+```
+
+### When to commit
+| Milestone | Commit? |
+|---|---|
+| New file written and imports work | Yes |
+| `alembic upgrade head` succeeds | Yes |
+| `migrate.py` run completes with verified counts | Yes |
+| Phase complete (all tasks checked) | Yes — tag as `phase-1-complete` |
+| Mid-task edit that doesn't run yet | No — wait until it works |
+| Stash/WIP state | No — finish the task first |
 
 ---
 

@@ -10,9 +10,9 @@ services:
       POSTGRES_DB: macrorag
     ports:
       # host_port:container_port
-      # 5432 is the default Postgres port.
-      # You connect to localhost:5432 from your machine or from the backend.
-      - "5432:5432"
+      # Using 5433 on the host to avoid conflict with any local Postgres installation.
+      # Connect to localhost:5433 from your machine or from the backend.
+      - "5433:5432"
     volumes:
       # Persist data to a local folder so it survives container restarts.
       # Without this, all data is lost when you run `docker compose down`.
