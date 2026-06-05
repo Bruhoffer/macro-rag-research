@@ -1,7 +1,7 @@
 # Macro RAG — Full Project Plan
 
 **Last updated:** 2026-06-05  
-**Status:** Phase 1 ~95% complete — migration script written, awaiting run confirmation  
+**Status:** Phase 2 COMPLETE — all embeddings populated, tsvectors built, HNSW indexes live. Phase 3 in progress.  
 **Project folder:** `email-ai/macro-rag/` (own git repo)  
 **Reference data:** `email-ai/raw-data/*.csv` (Delta Lake exports, read-only)  
 **Reference emails:** `email-ai/raw-emails/MM/DD/*.eml` (read-only)  
@@ -390,7 +390,7 @@ The analyst types a free-form question; no routing UI or mode-switching is neede
 |---|---|---|
 | `search_key_points` | Path 1 — hybrid semantic + BM25 | Query key points by meaning + filters (bank, topic, geography, sentiment, date, time_reference) |
 | `search_trade_ideas` | Path 1 — hybrid semantic + BM25 | Query trade ideas by meaning + filters (bank, asset_class, geography, horizon, date) |
-| `search_emails` | Path 2 — chunk ANN → parent email | Broad email search; returns matching chunk + full parent email with chunk highlighted |
+| `search_emails` | Path 2 — chunk ANN → parent email + related insights join | Broad email search; returns matching chunk + full parent email with chunk highlighted + all key points / trade ideas extracted from that same email (joined via `email_content_hash`) |
 | `get_disagreements` | SQL structured query | Fetch validated cross-bank disagreements, filtered by topic, geography, scale, date |
 | `get_topic_summary` | SQL exact match | Retrieve pre-computed daily bullet summaries with clickable `[N]` footnotes → key_point_id |
 | `get_stats` | SQL aggregation | Run COUNT/GROUP BY analytics: count_by_bank, sentiment_distribution, topic_frequency, asset_class_breakdown — returns structured numbers Claude can narrate |
@@ -420,15 +420,36 @@ Reconstruct path from `email_sent_dt` + `file_name`:
 **Citation highlighting:**  
 `key_point_citation` is verbatim from the email body → simple JS `indexOf()` to find + highlight in yellow. Works for both key points and email chunks.
 
+**Cross-table join via `email_content_hash`:**  
+All four tables share this key — enabling bidirectional enrichment:
+- Path 1 result (key point) → open email viewer → shows parent email with citation highlighted
+- Path 2 result (chunk) → open email viewer → shows parent email **+ all key points and trade ideas extracted from that email** as a "Related Insights" sidebar
+
+```
+email_chunks.email_content_hash
+key_points_full.email_content_hash    ─── all share the same hash
+trade_ideas_full.email_content_hash       for emails from the same source
+emails.email_content_hash (PK)
+```
+
+The `search_emails` tool response includes a `related_insights` field populated by:
+```sql
+SELECT key_point_text, effective_source_org, sentiment, topics, key_point_id
+FROM key_points_full
+WHERE email_content_hash = ANY(:matched_hashes)
+ORDER BY email_content_hash, email_sent_dt
+```
+
 **UI flow on click:**
 1. Slide-in right panel shows:
-   - Key point / chunk text (top)
+   - Matched chunk or key point text (top)
    - Email metadata: Subject, From, Date
-   - Full email body with citation highlighted and scrolled into view
+   - Full email body with citation/chunk highlighted and scrolled into view
+   - **"Related Insights" section** — structured key points and trade ideas extracted from this same email, each clickable to jump to that citation
    - Action buttons: "Download .eml" (streams raw file from backend) | "Copy citation"
 
 **Backend endpoint:**
-- `GET /api/emails/{hash}` → JSON with email_body, subject, from, date, file_name
+- `GET /api/emails/{hash}` → JSON with email_body, subject, from, date, file_name, related_key_points[], related_trade_ideas[]
 - `GET /api/emails/{hash}/raw` → streams raw `.eml` file from `../raw-emails/MM/DD/{file_name}`
 
 ---
@@ -445,7 +466,7 @@ GET  /api/disagreements/{id}      with bank_analysis expanded
 GET  /api/topic-summaries         ?topic=&date=
 GET  /api/trade-summaries         ?asset_class=&date=
 GET  /api/webinars                ?from=&to=&host_bank=
-GET  /api/emails/{hash}           email body + metadata for viewer
+GET  /api/emails/{hash}           email body + metadata + related_key_points[] + related_trade_ideas[] (joined via email_content_hash)
 GET  /api/emails/{hash}/raw       stream raw .eml file
 GET  /api/search                  ?q=&mode=key_points|emails|both
 POST /api/chat                    body: {messages, stream: true} → SSE stream
@@ -571,7 +592,7 @@ You don't need to manually verify the UI — I'll check it during development.
 
 ---
 
-### 🔄 Phase 1 — Postgres + Data Migration (IN PROGRESS)
+### ✅ Phase 1 — Postgres + Data Migration (COMPLETE)
 **Branch:** `phase/1-migration`  
 **Goal:** All data loaded into local Postgres, queryable  
 **Note:** Docker exposed on **port 5433** (not 5432) — local Homebrew/Postgres.app was already bound to 5432.
@@ -588,8 +609,8 @@ You don't need to manually verify the UI — I'll check it during development.
 - [x] `backend/alembic/versions/001_initial_schema.py` — CREATE EXTENSION vector + all tables + all indexes (GIN, btree)
 - [x] `alembic upgrade head` — all 12 tables created in DB, confirmed via `\dt`
 - [x] `backend/scripts/migrate.py` — reads all CSVs, deduplicates, joins enrichments, writes to Postgres with full stats reporting per table (csv_read → filtered → skipped → attempted → inserted → conflicts)
-- [ ] **NEXT: Run `python scripts/migrate.py`** and verify stats output
-- [ ] Verify: spot-check joins, assert email_content_hash links hold
+- [x] **Run `python scripts/migrate.py`** — verified stats output, all counts correct
+- [x] Verify: zero conflicts, all email_content_hash FKs satisfied
 
 **Actual CSV sizes (after inspection):**
 | CSV | Raw rows | After filter | Notes |
@@ -607,30 +628,24 @@ You don't need to manually verify the UI — I'll check it during development.
 
 ---
 
-### 🔲 Phase 2 — Embeddings
+### ✅ Phase 2 — Embeddings (COMPLETE)
 **Branch:** `phase/2-embeddings`  
 **Goal:** All vectors populated, both retrieval paths ready  
 **Note:** Email chunking is already done inside `migrate.py` — chunks written to `email_chunks` table during Phase 1 migration. Phase 2 is just adding vectors to existing rows.
 
 **Tasks:**
-- [ ] `backend/scripts/embed.py` — generate embeddings for all three tables
-  - **key_points_full**: `key_point_text + " Evidence: " + key_point_citation + " Context: " + key_point_context`
-  - **trade_ideas_full**: `trade_idea_text + " Evidence: " + trade_idea_citation + " Context: " + trade_idea_context`
-  - **email_chunks**: raw `chunk_text` only (no metadata mixed in)
-  - Model: `text-embedding-3-small` (OpenAI, 1536-dim)
-  - Batch: 100 at a time, rate-limit aware, resumable (skip rows where embedding IS NOT NULL)
-- [ ] Populate tsvector columns: `UPDATE key_points_full SET kp_fts = to_tsvector('english', coalesce(key_point_text,'') || ' ' || coalesce(key_point_citation,''))`
-- [ ] Build HNSW indexes (after embeddings populated — building on empty table is wasteful):
-  ```sql
-  CREATE INDEX ON key_points_full USING hnsw (kp_embedding vector_cosine_ops) WITH (m=16, ef_construction=64);
-  CREATE INDEX ON trade_ideas_full USING hnsw (ti_embedding vector_cosine_ops) WITH (m=16, ef_construction=64);
-  CREATE INDEX ON email_chunks USING hnsw (chunk_embedding vector_cosine_ops) WITH (m=16, ef_construction=64);
-  ```
-- [ ] Verify: run one semantic query (`SELECT key_point_text FROM key_points_full ORDER BY kp_embedding <=> '[...]' LIMIT 5`)
+- [x] `backend/scripts/embed.py` — embeddings for all three tables with contextual retrieval for email_chunks
+  - **key_points_full**: `key_point_text + " Evidence: " + citation + " Context: " + context` — 40,754 rows
+  - **trade_ideas_full**: same pattern — 4,885 rows
+  - **email_chunks**: Contextual Retrieval — prepend `"Email from {source_org} ({date}, subject: '{subject}'):\n\n{chunk_text}"` — 76,768 rows
+  - Batch 100, rate-limit retry with exponential backoff, resumable
+- [x] Populate tsvector columns — 40,754 kp_fts rows + 4,885 ti_fts rows
+- [x] Build HNSW indexes — key_points_full (101.7s), trade_ideas_full (2.1s), email_chunks (199.9s)
+- [x] Verify — semantic query "Federal Reserve interest rates" returns correct Fed/rates key points from UBS, MNI
 
 ---
 
-### 🔲 Phase 3 — FastAPI Backend
+### 🔄 Phase 3 — FastAPI Backend (IN PROGRESS)
 **Branch:** `phase/3-backend`  
 **Goal:** All API endpoints working, chat streaming working
 
@@ -640,7 +655,7 @@ You don't need to manually verify the UI — I'll check it during development.
 - [ ] `backend/app/retrieval/hybrid.py` — hybrid search implementation
   - `search_key_points(query, filters, top_k)` → RRF of semantic + BM25
   - `search_trade_ideas(query, filters, top_k)`
-  - `search_emails(query, filters, top_k)` → chunk search → parent email
+  - `search_emails(query, filters, top_k)` → chunk ANN → deduplicate by `email_content_hash` → fetch parent emails → join related key points + trade ideas on same hash → return `{email, matched_chunk, related_key_points[], related_trade_ideas[]}`
   - Query expansion: alias resolution from source_orgs + geographies reference tables
 - [ ] `backend/app/routers/key_points.py` — browse + search endpoints
 - [ ] `backend/app/routers/trade_ideas.py`
