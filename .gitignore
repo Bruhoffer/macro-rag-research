@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Docker volume data
+data/
+
+# DS_Store
+.DS_Store

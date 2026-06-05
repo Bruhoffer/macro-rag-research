@@ -1,0 +1,57 @@
+[project]
+name = "macro-rag"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    # Web framework
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+
+    # Database
+    "sqlalchemy[asyncio]>=2.0",   # ORM + async support
+    "asyncpg>=0.29",               # async Postgres driver (used by SQLAlchemy)
+    "psycopg2-binary>=2.9",        # sync Postgres driver (used by Alembic)
+    "alembic>=1.13",               # database migrations
+    "pgvector>=0.3",               # pgvector integration with SQLAlchemy
+
+    # Data loading
+    "pandas>=2.2",
+    "numpy>=1.26",
+
+    # LLM APIs
+    "anthropic>=0.40",
+    "openai>=1.50",
+
+    # Environment
+    "python-dotenv>=1.0",
+
+    # Utilities
+    "httpx>=0.27",                 # async HTTP client (for streaming)
+    "tiktoken>=0.7",               # token counting for chunking
+    "tqdm>=4.66",                  # progress bars in migration scripts
+    "email-validator>=2.1",        # email parsing helpers
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

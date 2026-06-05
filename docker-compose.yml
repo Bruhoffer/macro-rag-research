@@ -1,0 +1,24 @@
+services:
+  db:
+    # pgvector/pgvector is Postgres 16 with pgvector pre-installed.
+    # We can't use plain postgres:16 because it doesn't have the vector extension.
+    image: pgvector/pgvector:pg16
+    container_name: macro_rag_db
+    environment:
+      POSTGRES_USER: macrorag
+      POSTGRES_PASSWORD: macrorag
+      POSTGRES_DB: macrorag
+    ports:
+      # host_port:container_port
+      # 5432 is the default Postgres port.
+      # You connect to localhost:5432 from your machine or from the backend.
+      - "5432:5432"
+    volumes:
+      # Persist data to a local folder so it survives container restarts.
+      # Without this, all data is lost when you run `docker compose down`.
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U macrorag -d macrorag"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

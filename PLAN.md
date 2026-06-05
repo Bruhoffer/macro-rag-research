@@ -1,7 +1,7 @@
 # Macro RAG — Full Project Plan
 
 **Last updated:** 2026-06-05  
-**Status:** Phase 0 — Planning complete, starting Phase 1  
+**Status:** Phase 1 in progress — Docker pending user action  
 **Project folder:** `email-ai/macro-rag/` (own git repo)  
 **Reference data:** `email-ai/raw-data/*.csv` (Delta Lake exports, read-only)  
 **Reference emails:** `email-ai/raw-emails/MM/DD/*.eml` (read-only)  
@@ -529,36 +529,41 @@ You don't need to manually verify the UI — I'll check it during development.
 
 ### ✅ Phase 0 — Planning (COMPLETE)
 - [x] Understand full old codebase + CSV exports
-- [x] Design retrieval architecture
-- [x] Design database schema
-- [x] Create `macro-rag` git repo
+- [x] Design retrieval architecture (two-path hybrid: key points + email chunks)
+- [x] Design database schema (all tables with indexes)
+- [x] Create `macro-rag` git repo (inside `email-ai/`, own git history)
 - [x] Write this plan
 
 ---
 
-### 🔲 Phase 1 — Postgres + Data Migration
+### 🔄 Phase 1 — Postgres + Data Migration (IN PROGRESS)
 **Branch:** `phase/1-migration`  
-**Goal:** All data loaded into local Postgres, queryable
+**Goal:** All data loaded into local Postgres, queryable  
+**Blocker:** User needs to open Docker Desktop before container can start
 
 **Tasks:**
-- [ ] `docker-compose.yml` — Postgres 16 + pgvector extension
-- [ ] `backend/pyproject.toml` — FastAPI, SQLAlchemy async, asyncpg, psycopg2, alembic, pandas, openai, anthropic
+- [x] Project folder structure created (`backend/`, `frontend/`, subdirs)
+- [x] `docker-compose.yml` — Postgres 16 + pgvector image (`pgvector/pgvector:pg16`)
+- [x] `.env` + `.env.example` — DATABASE_URL, API keys, data paths
+- [x] `backend/pyproject.toml` — all dependencies declared (FastAPI, SQLAlchemy, asyncpg, alembic, pgvector, pandas, openai, anthropic, tiktoken, tqdm)
+- [x] `backend/.venv/` — virtual environment created and all packages installed
+- [ ] **NEXT: Open Docker Desktop → run `docker compose up -d`** ← waiting on user
+- [ ] Alembic init + `alembic.ini` config
 - [ ] `backend/app/db.py` — async SQLAlchemy engine + session factory
 - [ ] `backend/app/models/` — ORM models for all tables
-- [ ] `backend/scripts/migrate.py` — reads all CSVs from `../raw-data/`, deduplicates (load_end_dt IS NULL), joins enrichments into denormalized tables, loads into Postgres
-  - emails: deduplicate by email_content_hash (largest email_body_length wins ties)
-  - key_points_full: join key_points + key_points_enrichments on key_point_id/keypoint_id
+- [ ] `backend/alembic/versions/001_initial_schema.py` — CREATE TABLE + CREATE INDEX (pgvector, GIN, BM25 tsvector)
+- [ ] `backend/scripts/migrate.py` — reads all CSVs, deduplicates, joins enrichments, writes to Postgres
+  - emails: dedup by email_content_hash (keep status=ok, largest email_body_length)
+  - key_points_full: join key_points + key_points_enrichments on key_point_id/keypoint_id, add sentiment_score INT
   - trade_ideas_full: join trade_ideas + trade_ideas_enrichments on trade_idea_id
-  - disagreements + disagreement_validations: filter to canonical/non-false-positive
-  - topic_summaries, trade_summaries, webinars: deduplicate by entity key
+  - disagreements + disagreement_validations: load as-is (filter happens at query time)
+  - topic_summaries, trade_summaries: dedup by (topic/group_key, window_start, window_end) + parse label_map JSON
+  - webinars: dedup by file_name
   - source_orgs, topics, geographies: load reference tables
-- [ ] `alembic/` — migration for schema creation (all tables + indexes, pgvector extension)
-- [ ] Verify: run counts, spot-check joins, assert no nulls on key fields
+- [ ] Verify: row counts, spot-check joins, assert email_content_hash links hold
 
 **Dedup logic for emails_parsed (637k rows → ~5k unique):**
 ```python
-# Keep the row with largest email_body_length per email_content_hash
-# where load_end_dt IS NULL (or null) and status = 'ok'
 emails_df = (
     df[df['status'] == 'ok']
     .sort_values('email_body_length', ascending=False)
