@@ -110,8 +110,14 @@ def parse_numpy_array(s) -> list:
 def parse_json(s) -> Any:
     if pd.isna(s) or str(s).strip() in ("", "nan", "null"):
         return None
+    text = str(s).strip()
     try:
-        return json.loads(str(s))
+        return json.loads(text)
+    except Exception:
+        pass
+    try:
+        import ast
+        return ast.literal_eval(text)
     except Exception:
         return None
 
