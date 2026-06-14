@@ -283,10 +283,10 @@ async def _get_stats(db: AsyncSession, input_: dict) -> list[dict]:
         filters.append("effective_source_org = :source_org")
         params["source_org"] = f["source_org"]
     if f.get("topic") and metric != "topic_frequency":
-        filters.append("topics @> ARRAY[:topic]")
+        filters.append("topics @> ARRAY[:topic]::varchar[]")
         params["topic"] = f["topic"]
     if f.get("geography"):
-        filters.append("geographies @> ARRAY[:geography]")
+        filters.append("geographies @> ARRAY[:geography]::varchar[]")
         params["geography"] = f["geography"]
     if f.get("sentiment"):
         filters.append("sentiment = :sentiment")

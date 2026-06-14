@@ -62,6 +62,7 @@ After every commit, update the relevant `[ ]` task in `PLAN.md` to `[x]`.
 5. `label_map` keys in topic_summaries are `"1"`, `"2"` etc. (plain integers as strings), not `"[1]"`.
 6. `key_point_citation` is always a verbatim substring of `email_body` — use `indexOf` for highlighting, no fuzzy matching needed.
 7. HNSW indexes must be built **after** embeddings are populated — don't add them in Phase 1 migration.
+8. **`varchar[] @> text[]` type mismatch with asyncpg:** `ARRAY(String)` in SQLAlchemy maps to `character varying[]` in Postgres. When asyncpg binds a Python `str` into a raw SQL `ARRAY[:param]`, it infers `text[]` — and Postgres has no `@>` operator for `varchar[] @> text[]`. Always cast the RHS: `ARRAY[:param]::varchar[]`.
 
 ## Architecture Quick Reference
 
