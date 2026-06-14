@@ -52,7 +52,7 @@ async def chat(req: ChatRequest, db: Db):
 async def _stream(messages: list[dict], db: AsyncSession) -> AsyncGenerator[str, None]:
     try:
         async for event in _tool_loop(messages, db):
-            yield f"data: {json.dumps(event)}\n\n"
+            yield f"data: {json.dumps(event, default=str)}\n\n"
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
     except Exception as exc:
         yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
