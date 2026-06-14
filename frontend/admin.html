@@ -41,7 +41,7 @@
     <div class="max-w-6xl mx-auto p-6 space-y-6">
 
       <!-- ── STATS STRIP ── -->
-      <div x-show="stats" class="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div x-show="stats" class="grid grid-cols-2 md:grid-cols-6 gap-3">
         <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
           <div class="text-xs text-gray-500">Total chats</div>
           <div class="text-2xl font-semibold" x-text="fmtNum(stats?.chats?.total_chats)"></div>
@@ -58,6 +58,10 @@
         <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
           <div class="text-xs text-gray-500">Output tokens</div>
           <div class="text-2xl font-semibold" x-text="fmtNum(stats?.chats?.total_output_tokens)"></div>
+        </div>
+        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+          <div class="text-xs text-gray-500">Est. cost</div>
+          <div class="text-2xl font-semibold" x-text="fmtCost(stats?.chats?.total_cost_usd)"></div>
         </div>
         <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
           <div class="text-xs text-gray-500">Errors</div>
@@ -101,6 +105,7 @@
               <th class="text-center font-medium px-4 py-2">Rounds</th>
               <th class="text-center font-medium px-4 py-2">Tools</th>
               <th class="text-right font-medium px-4 py-2">Tokens (in/out)</th>
+              <th class="text-right font-medium px-4 py-2">Cost</th>
               <th class="text-right font-medium px-4 py-2">Duration</th>
               <th class="text-center font-medium px-4 py-2">Status</th>
             </tr>
@@ -115,6 +120,7 @@
                 <td class="px-4 py-2 text-right text-gray-500 whitespace-nowrap">
                   <span x-text="fmtNum(c.input_tokens)"></span> / <span x-text="fmtNum(c.output_tokens)"></span>
                 </td>
+                <td class="px-4 py-2 text-right text-gray-700 whitespace-nowrap font-medium" x-text="fmtCost(c.estimated_cost_usd)"></td>
                 <td class="px-4 py-2 text-right text-gray-600 whitespace-nowrap" x-text="fmtMs(c.duration_ms)"></td>
                 <td class="px-4 py-2 text-center">
                   <span class="text-xs px-2 py-0.5 rounded" :class="statusClass(c.status)" x-text="c.status"></span>
@@ -122,7 +128,7 @@
               </tr>
             </template>
             <tr x-show="!chatsLoading && chats.length === 0">
-              <td colspan="7" class="px-4 py-8 text-center text-gray-400 text-sm">No chat traces yet.</td>
+              <td colspan="8" class="px-4 py-8 text-center text-gray-400 text-sm">No chat traces yet.</td>
             </tr>
           </tbody>
         </table>
@@ -200,6 +206,8 @@
             <div><span class="text-gray-400 text-xs">Duration</span><br><span x-text="fmtMs(detail.duration_ms)"></span></div>
             <div><span class="text-gray-400 text-xs">Tokens (in/out)</span><br>
               <span x-text="`${fmtNum(detail.input_tokens)} / ${fmtNum(detail.output_tokens)}`"></span></div>
+            <div><span class="text-gray-400 text-xs">Est. cost</span><br>
+              <span class="font-medium" x-text="fmtCost(detail.estimated_cost_usd)"></span></div>
             <div><span class="text-gray-400 text-xs">Model</span><br><span class="font-mono text-xs" x-text="detail.model"></span></div>
           </div>
 

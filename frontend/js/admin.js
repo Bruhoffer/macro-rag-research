@@ -101,6 +101,7 @@ function adminApp() {
       return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(2)} s`;
     },
     fmtNum(n) { return (n ?? 0).toLocaleString(); },
+    fmtCost(n) { return n == null ? '—' : '$' + n.toFixed(4); },
     truncate(s, n = 90) { if (!s) return ''; return s.length > n ? s.slice(0, n) + '…' : s; },
     prettyJson(obj) { try { return JSON.stringify(obj, null, 2); } catch { return String(obj); } },
 

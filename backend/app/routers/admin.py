@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.chat.pricing import estimate_cost
 from app.db import get_db
 
 router = APIRouter(tags=["admin"])
@@ -41,14 +42,23 @@ async def list_chat_traces(
     total = (await db.execute(text(f"SELECT count(*) FROM chat_traces ct {where}"), params)).scalar()
     rows = await db.execute(text(f"""
         SELECT ct.trace_id, ct.created_at, ct.user_query, ct.model, ct.n_rounds,
-               ct.input_tokens, ct.output_tokens, ct.stop_reason, ct.status, ct.duration_ms,
+               ct.input_tokens, ct.output_tokens, ct.cache_read_tokens, ct.cache_creation_tokens,
+               ct.stop_reason, ct.status, ct.duration_ms,
                (SELECT count(*) FROM tool_call_traces t WHERE t.trace_id = ct.trace_id) AS tool_count
         FROM chat_traces ct
         {where}
         ORDER BY ct.created_at DESC
         LIMIT :limit OFFSET :offset
     """), params)
-    return {"data": [dict(r._mapping) for r in rows], "total": total, "page": page, "limit": limit}
+    data = []
+    for r in rows:
+        row = dict(r._mapping)
+        row["estimated_cost_usd"] = estimate_cost(
+            row["model"], row["input_tokens"], row["output_tokens"],
+            row["cache_read_tokens"], row["cache_creation_tokens"],
+        )
+        data.append(row)
+    return {"data": data, "total": total, "page": page, "limit": limit}
 
 
 @router.get("/chat-traces/{trace_id}")
@@ -60,6 +70,10 @@ async def get_chat_trace(trace_id: str, db: Db) -> dict[str, Any]:
     if not trow:
         raise HTTPException(status_code=404, detail="Trace not found")
     trace = dict(trow._mapping)
+    trace["estimated_cost_usd"] = estimate_cost(
+        trace["model"], trace["input_tokens"], trace["output_tokens"],
+        trace["cache_read_tokens"], trace["cache_creation_tokens"],
+    )
     tool_rows = await db.execute(text("""
         SELECT id, round_index, tool_name, tool_input, tool_output, result_count, duration_ms, created_at
         FROM tool_call_traces
@@ -126,8 +140,27 @@ async def admin_stats(db: Db) -> dict[str, Any]:
         ORDER BY count DESC
         LIMIT 20
     """))
+
+    # Total estimated cost — summed per model (rates differ by model) in Python.
+    model_rows = await db.execute(text("""
+        SELECT model,
+               coalesce(sum(input_tokens), 0)          AS input_tokens,
+               coalesce(sum(output_tokens), 0)         AS output_tokens,
+               coalesce(sum(cache_read_tokens), 0)     AS cache_read_tokens,
+               coalesce(sum(cache_creation_tokens), 0) AS cache_creation_tokens
+        FROM chat_traces
+        GROUP BY model
+    """))
+    total_cost = 0.0
+    for m in model_rows:
+        cost = estimate_cost(m.model, m.input_tokens, m.output_tokens, m.cache_read_tokens, m.cache_creation_tokens)
+        if cost:
+            total_cost += cost
+
+    chats = dict(chat_agg._mapping)
+    chats["total_cost_usd"] = round(total_cost, 6)
     return {
-        "chats": dict(chat_agg._mapping),
+        "chats": chats,
         "tool_frequency": [dict(r._mapping) for r in tool_freq],
         "requests_by_path": [dict(r._mapping) for r in req_by_path],
     }
