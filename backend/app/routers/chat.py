@@ -13,6 +13,8 @@ Event types:
 """
 
 import json
+import sys
+import time
 from typing import Annotated, Any, AsyncGenerator
 
 import anthropic
@@ -24,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.chat.system_prompt import SYSTEM_PROMPT
 from app.chat.tools import TOOLS
+from app.chat.tracing import TraceRecorder
 from app.config import ANTHROPIC_API_KEY, CHAT_MODEL
 from app.db import get_db
 from app.retrieval.hybrid import search_emails, search_key_points, search_trade_ideas
@@ -50,18 +53,27 @@ async def chat(req: ChatRequest, db: Db):
 
 
 async def _stream(messages: list[dict], db: AsyncSession) -> AsyncGenerator[str, None]:
+    recorder = TraceRecorder(model=CHAT_MODEL, request_messages=messages)
     try:
-        async for event in _tool_loop(messages, db):
+        async for event in _tool_loop(messages, db, recorder):
             yield f"data: {json.dumps(event, default=str)}\n\n"
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
     except Exception as exc:
+        recorder.fail(str(exc))
         yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+    finally:
+        # Best-effort: a trace-write failure must never break the user response.
+        try:
+            await recorder.persist()
+        except Exception as exc:
+            print(f"[trace] failed to persist chat trace: {exc}", file=sys.stderr)
 
 
 async def _tool_loop(
-    messages: list[dict], db: AsyncSession
+    messages: list[dict], db: AsyncSession, recorder: TraceRecorder
 ) -> AsyncGenerator[dict, None]:
     history = list(messages)
+    last_text = ""
 
     for _round in range(MAX_TOOL_ROUNDS):
         # Stream Claude's response
@@ -101,12 +113,15 @@ async def _tool_loop(
 
         # Check stop reason
         stop_reason = final.stop_reason
+        recorder.add_round(final.usage, stop_reason)
+        last_text = text_so_far
 
         # Add assistant turn to history
         history.append({"role": "assistant", "content": final.content})
 
         if stop_reason == "end_turn" or not tool_calls:
-            break
+            recorder.finish(last_text, "ok")
+            return
 
         if stop_reason == "tool_use":
             # Extract tool calls from final.content
@@ -119,7 +134,10 @@ async def _tool_loop(
                 tool_input = block.input
                 yield {"type": "tool_call", "name": tool_name, "input": tool_input}
 
+                t0 = time.perf_counter()
                 result = await _dispatch_tool(tool_name, tool_input, db)
+                duration_ms = int((time.perf_counter() - t0) * 1000)
+                recorder.add_tool(_round, tool_name, tool_input, result, duration_ms)
                 yield {"type": "tool_result", "name": tool_name, "result": result}
 
                 tool_results.append({
@@ -131,7 +149,11 @@ async def _tool_loop(
             history.append({"role": "user", "content": tool_results})
 
         else:
-            break
+            recorder.finish(last_text, "ok")
+            return
+
+    # Loop exhausted without returning → hit the round cap mid tool-use.
+    recorder.finish(last_text, "max_rounds")
 
 
 async def _dispatch_tool(name: str, input_: dict, db: AsyncSession) -> Any:

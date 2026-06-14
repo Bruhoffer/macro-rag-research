@@ -7,6 +7,7 @@ from app.models.disagreements import Disagreement, DisagreementValidation
 from app.models.summaries import TopicSummary, TradeSummary
 from app.models.webinars import Webinar
 from app.models.reference import SourceOrg, Topic, Geography
+from app.models.traces import ChatTrace, ToolCallTrace, ApiRequestLog
 
 __all__ = [
     "Base",
@@ -22,4 +23,7 @@ __all__ = [
     "SourceOrg",
     "Topic",
     "Geography",
+    "ChatTrace",
+    "ToolCallTrace",
+    "ApiRequestLog",
 ]
