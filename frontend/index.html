@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Macro RAG</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js" integrity="sha384-NNQgBjjuhtXzPmmy4gurS5X7P4uTt1DThyevz4Ua0IVK5+kazYQI1W27JHjbbxQz" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js" integrity="sha384-+VfUPEb0PdtChMwmBcBmykRMDd+v6D/oFmB3rZM/puCMDYcIvF968OimRh4KQY9a" crossorigin="anonymous"></script>
   <script src="/js/api.js"></script>
   <script src="/js/chat.js"></script>
   <script src="/js/app.js"></script>
@@ -13,6 +15,16 @@
     [x-cloak] { display: none !important; }
     .scrollbar-thin::-webkit-scrollbar { width: 4px; }
     .scrollbar-thin::-webkit-scrollbar-thumb { background: #475569; border-radius: 2px; }
+    .prose-chat table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; margin: 0.5rem 0; }
+    .prose-chat th, .prose-chat td { border: 1px solid #e2e8f0; padding: 0.375rem 0.75rem; text-align: left; }
+    .prose-chat th { background: #f8fafc; font-weight: 600; }
+    .prose-chat tr:hover { background: #f8fafc; }
+    .prose-chat p { margin: 0.25rem 0; }
+    .prose-chat ul, .prose-chat ol { padding-left: 1.25rem; margin: 0.25rem 0; }
+    .prose-chat h1, .prose-chat h2, .prose-chat h3 { font-weight: 600; margin: 0.5rem 0 0.25rem; }
+    .prose-chat code { background: #f1f5f9; padding: 0.1rem 0.3rem; border-radius: 0.25rem; font-size: 0.8em; }
+    .prose-chat pre { background: #1e293b; color: #e2e8f0; padding: 0.75rem 1rem; border-radius: 0.5rem; overflow-x: auto; margin: 0.5rem 0; }
+    .prose-chat pre code { background: transparent; padding: 0; font-size: 0.8125rem; }
   </style>
 </head>
 <body class="h-full bg-gray-50 text-gray-900 antialiased" x-data="app()" x-init="init()" x-cloak>
@@ -445,9 +457,28 @@
                 <!-- Text response -->
                 <div
                   x-show="msg.content"
-                  class="bg-white rounded-2xl rounded-bl-sm border border-gray-100 shadow-sm px-4 py-3 text-sm text-gray-800 leading-relaxed whitespace-pre-wrap"
-                  x-text="msg.content"
+                  class="prose-chat bg-white rounded-2xl rounded-bl-sm border border-gray-100 shadow-sm px-4 py-3 text-sm text-gray-800 leading-relaxed"
+                  x-html="renderMarkdown(msg.content)"
                 ></div>
+
+                <!-- Sources -->
+                <div x-show="msg.sources && msg.sources.length" class="mt-1">
+                  <details class="group">
+                    <summary class="cursor-pointer text-xs text-gray-400 hover:text-gray-600 select-none list-none flex items-center gap-1">
+                      <span class="transition-transform group-open:rotate-90 inline-block">▶</span>
+                      <span x-text="`Sources (${(msg.sources || []).length})`"></span>
+                    </summary>
+                    <div class="mt-1.5 flex flex-wrap gap-1.5">
+                      <template x-for="(src, si) in (msg.sources || [])" :key="si">
+                        <button
+                          @click="openEmail(src.email_content_hash, src.citation)"
+                          class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-1 rounded-full transition-colors"
+                          x-text="`${src.org || '?'} · ${fmtDateShort(src.date)}`"
+                        ></button>
+                      </template>
+                    </div>
+                  </details>
+                </div>
 
                 <!-- Streaming indicator -->
                 <div x-show="msg.streaming" class="flex items-center gap-1 text-gray-400 text-xs px-1">

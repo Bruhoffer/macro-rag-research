@@ -220,5 +220,10 @@ function app() {
       if (!text) return '';
       return text.length > len ? text.slice(0, len) + '…' : text;
     },
+
+    renderMarkdown(text) {
+      if (!text) return '';
+      return DOMPurify.sanitize(marked.parse(text));
+    },
   };
 }

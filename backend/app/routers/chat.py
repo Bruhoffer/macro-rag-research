@@ -260,7 +260,44 @@ async def _get_topic_summary(db: AsyncSession, input_: dict) -> list[dict]:
     rows = await db.execute(sql, params)
     cols = ["topic", "window_start", "window_end", "bullets", "bullet_count",
             "source_orgs", "kp_count", "label_map"]
-    return [dict(zip(cols, r)) for r in rows]
+    summaries = [dict(zip(cols, r)) for r in rows]
+
+    # Batch-resolve label_map key_point_ids → citation metadata for the frontend
+    all_kp_ids: list[str] = []
+    for s in summaries:
+        all_kp_ids.extend((s.get("label_map") or {}).values())
+
+    if all_kp_ids:
+        enrich_rows = await db.execute(
+            text("""
+                SELECT key_point_id, email_content_hash, key_point_citation,
+                       effective_source_org, email_sent_dt
+                FROM key_points_full WHERE key_point_id::text = ANY(:ids)
+            """),
+            {"ids": all_kp_ids},
+        )
+        kp_meta: dict[str, dict] = {
+            str(r[0]): {
+                "key_point_id": str(r[0]),
+                "email_content_hash": r[1],
+                "key_point_citation": r[2],
+                "effective_source_org": r[3],
+                "email_sent_dt": str(r[4]) if r[4] else None,
+            }
+            for r in enrich_rows
+        }
+        for s in summaries:
+            lm = s.get("label_map") or {}
+            s["label_map_enriched"] = {
+                label: kp_meta[kp_id]
+                for label, kp_id in lm.items()
+                if kp_id in kp_meta
+            }
+    else:
+        for s in summaries:
+            s["label_map_enriched"] = {}
+
+    return summaries
 
 
 _STATS_QUERIES: dict[str, str] = {

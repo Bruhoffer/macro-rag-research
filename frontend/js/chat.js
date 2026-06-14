@@ -12,7 +12,7 @@ function chatMixin() {
       this.chatInput = '';
       this.chatLoading = true;
 
-      const assistantMsg = { role: 'assistant', content: '', toolCalls: [], streaming: true };
+      const assistantMsg = { role: 'assistant', content: '', toolCalls: [], sources: [], streaming: true };
       this.messages.push(assistantMsg);
       const idx = this.messages.length - 1;
 
@@ -73,6 +73,38 @@ function chatMixin() {
               const tc = this.messages[msgIdx].toolCalls
                 .find(t => t.name === event.name && t.result === null);
               if (tc) tc.result = event.result;
+
+              // Collect citation sources for the Sources section
+              const msg = this.messages[msgIdx];
+              const seen = new Set(msg.sources.map(s => s.key_point_id || s.trade_idea_id));
+
+              if (event.name === 'search_key_points' && Array.isArray(event.result)) {
+                for (const r of event.result) {
+                  if (r.email_content_hash && !seen.has(r.key_point_id)) {
+                    seen.add(r.key_point_id);
+                    msg.sources.push({ key_point_id: r.key_point_id, email_content_hash: r.email_content_hash,
+                      citation: r.key_point_citation, org: r.effective_source_org, date: r.email_sent_dt });
+                  }
+                }
+              } else if (event.name === 'search_trade_ideas' && Array.isArray(event.result)) {
+                for (const r of event.result) {
+                  if (r.email_content_hash && !seen.has(r.trade_idea_id)) {
+                    seen.add(r.trade_idea_id);
+                    msg.sources.push({ trade_idea_id: r.trade_idea_id, email_content_hash: r.email_content_hash,
+                      citation: r.trade_idea_citation, org: r.effective_source_org, date: r.email_sent_dt });
+                  }
+                }
+              } else if (event.name === 'get_topic_summary' && Array.isArray(event.result)) {
+                for (const summary of event.result) {
+                  for (const meta of Object.values(summary.label_map_enriched || {})) {
+                    if (meta.email_content_hash && !seen.has(meta.key_point_id)) {
+                      seen.add(meta.key_point_id);
+                      msg.sources.push({ key_point_id: meta.key_point_id, email_content_hash: meta.email_content_hash,
+                        citation: meta.key_point_citation, org: meta.effective_source_org, date: meta.email_sent_dt });
+                    }
+                  }
+                }
+              }
 
             } else if (event.type === 'done') {
               this.messages[msgIdx].streaming = false;
