@@ -221,9 +221,48 @@ function app() {
       return text.length > len ? text.slice(0, len) + '…' : text;
     },
 
-    renderMarkdown(text) {
+    renderMarkdown(text, sources, streaming) {
       if (!text) return '';
-      return DOMPurify.sanitize(marked.parse(text));
+
+      // Strip complete or partial SOURCES block before parsing.
+      // A partial block (no closing -->) would make the browser treat all
+      // subsequent HTML as a comment, hiding the rest of the response.
+      const cleanText = text
+        .replace(/<!--\s*SOURCES[\s\S]*?-->/, '')   // complete block
+        .replace(/<!--\s*SOURCES[\s\S]*$/, '');      // partial block still streaming
+
+      const sanitized = DOMPurify.sanitize(marked.parse(cleanText));
+
+      // After streaming ends, resolve [^N] markers into clickable superscripts.
+      if (streaming) return sanitized;
+
+      // Build footnote_num → source lookup from the SOURCES block in the original text.
+      const resolvedMap = {};
+      const blockMatch = text.match(/<!--\s*SOURCES\s*\n([\s\S]*?)-->/);
+      if (blockMatch) {
+        for (const line of blockMatch[1].trim().split('\n')) {
+          const m = line.match(/^\[\^(\d+)\]:\s*(.+)$/);
+          if (!m) continue;
+          const src = (sources || []).find(s => s.key_point_id === m[2].trim());
+          if (src) resolvedMap[m[1]] = src;
+        }
+      }
+
+      if (!Object.keys(resolvedMap).length) return sanitized;
+
+      const esc = s => (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+      return sanitized.replace(/\[\^(\d+)\]/g, (_, n) => {
+        const src = resolvedMap[n];
+        if (!src) return `<sup class="text-gray-400 text-xs ml-0.5">[${n}]</sup>`;
+        return (
+          `<sup><button ` +
+          `class="inline-flex items-center justify-center w-3.5 h-3.5 text-[10px] bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full font-bold ml-0.5 leading-none" ` +
+          `data-email-hash="${esc(src.email_content_hash)}" ` +
+          `data-email-citation="${esc(src.citation)}" ` +
+          `title="${esc(src.org)} · ${esc(src.date)}"` +
+          `>${n}</button></sup>`
+        );
+      });
     },
   };
 }
