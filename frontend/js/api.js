@@ -29,4 +29,10 @@ const api = {
   metaBanks:      () => _get('/api/meta/source-orgs'),
   metaTopics:     () => _get('/api/meta/topics'),
   metaGeos:       () => _get('/api/meta/geographies'),
+
+  // Admin / observability
+  adminChatTraces: (p) => _get('/api/admin/chat-traces', p),
+  adminChatTrace:  (id) => _get(`/api/admin/chat-traces/${id}`),
+  adminApiRequests:(p) => _get('/api/admin/api-requests', p),
+  adminStats:      () => _get('/api/admin/stats'),
 };

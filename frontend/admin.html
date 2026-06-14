@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Macro RAG · Admin</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/admin.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+    .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+  </style>
+</head>
+<body class="h-full bg-gray-50 text-gray-900 antialiased" x-data="adminApp()" x-init="init()" x-cloak>
+
+  <!-- ═══════════════════════════ TOP NAV ═══════════════════════════ -->
+  <nav class="fixed top-0 left-0 right-0 h-14 z-30 bg-slate-900 flex items-center px-5 gap-4 shadow-lg">
+    <span class="text-white font-semibold text-sm tracking-wide shrink-0">Macro RAG · Admin</span>
+    <div class="flex-1"></div>
+    <div class="flex rounded-lg overflow-hidden border border-slate-600 shrink-0">
+      <button @click="switchTab('chats')"
+        :class="tab === 'chats' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
+        class="px-4 py-1.5 text-xs font-medium transition-colors">Chat traces</button>
+      <button @click="switchTab('requests')"
+        :class="tab === 'requests' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
+        class="px-4 py-1.5 text-xs font-medium transition-colors">API requests</button>
+    </div>
+    <a href="/" class="text-xs text-slate-300 hover:text-white shrink-0">← Back to app</a>
+  </nav>
+
+  <!-- ═══════════════════════════ CONTENT ═══════════════════════════ -->
+  <main class="pt-14 min-h-screen">
+    <div class="max-w-6xl mx-auto p-6 space-y-6">
+
+      <!-- ── STATS STRIP ── -->
+      <div x-show="stats" class="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+          <div class="text-xs text-gray-500">Total chats</div>
+          <div class="text-2xl font-semibold" x-text="fmtNum(stats?.chats?.total_chats)"></div>
+        </div>
+        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+          <div class="text-xs text-gray-500">Avg latency</div>
+          <div class="text-2xl font-semibold" x-text="fmtMs(stats?.chats?.avg_duration_ms)"></div>
+          <div class="text-xs text-gray-400">p95 <span x-text="fmtMs(stats?.chats?.p95_duration_ms)"></span></div>
+        </div>
+        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+          <div class="text-xs text-gray-500">Input tokens</div>
+          <div class="text-2xl font-semibold" x-text="fmtNum(stats?.chats?.total_input_tokens)"></div>
+        </div>
+        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+          <div class="text-xs text-gray-500">Output tokens</div>
+          <div class="text-2xl font-semibold" x-text="fmtNum(stats?.chats?.total_output_tokens)"></div>
+        </div>
+        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+          <div class="text-xs text-gray-500">Errors</div>
+          <div class="text-2xl font-semibold" :class="(stats?.chats?.error_count > 0) ? 'text-red-600' : ''"
+               x-text="fmtNum(stats?.chats?.error_count)"></div>
+        </div>
+      </div>
+
+      <!-- Tool frequency -->
+      <div x-show="stats && stats.tool_frequency?.length" class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+        <div class="text-xs font-semibold text-gray-500 mb-2">Tool usage</div>
+        <div class="flex flex-wrap gap-2">
+          <template x-for="t in (stats?.tool_frequency || [])" :key="t.tool_name">
+            <span class="text-xs bg-slate-100 text-slate-700 px-2 py-1 rounded">
+              <span x-text="toolLabel(t.tool_name)"></span>
+              · <span class="font-semibold" x-text="t.count"></span>
+              · <span class="text-gray-400" x-text="fmtMs(t.avg_duration_ms)"></span>
+            </span>
+          </template>
+        </div>
+      </div>
+
+      <!-- ════════ CHAT TRACES TAB ════════ -->
+      <div x-show="tab === 'chats'" class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        <div class="flex items-center gap-3 px-4 py-3 border-b border-gray-100">
+          <span class="text-sm font-semibold">Chat traces</span>
+          <select x-model="chatStatus" @change="chatPage = 1; loadChats()"
+                  class="text-xs border border-gray-200 rounded px-2 py-1">
+            <option value="">all statuses</option>
+            <option value="ok">ok</option>
+            <option value="error">error</option>
+            <option value="max_rounds">max_rounds</option>
+          </select>
+          <span class="text-xs text-gray-400" x-show="chatsLoading">loading…</span>
+        </div>
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50 text-xs text-gray-500">
+            <tr>
+              <th class="text-left font-medium px-4 py-2">When</th>
+              <th class="text-left font-medium px-4 py-2">Query</th>
+              <th class="text-center font-medium px-4 py-2">Rounds</th>
+              <th class="text-center font-medium px-4 py-2">Tools</th>
+              <th class="text-right font-medium px-4 py-2">Tokens (in/out)</th>
+              <th class="text-right font-medium px-4 py-2">Duration</th>
+              <th class="text-center font-medium px-4 py-2">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="c in chats" :key="c.trace_id">
+              <tr @click="openTrace(c.trace_id)" class="border-t border-gray-50 hover:bg-blue-50 cursor-pointer">
+                <td class="px-4 py-2 text-gray-500 whitespace-nowrap" x-text="fmtDate(c.created_at)"></td>
+                <td class="px-4 py-2" x-text="truncate(c.user_query)"></td>
+                <td class="px-4 py-2 text-center text-gray-600" x-text="c.n_rounds"></td>
+                <td class="px-4 py-2 text-center text-gray-600" x-text="c.tool_count"></td>
+                <td class="px-4 py-2 text-right text-gray-500 whitespace-nowrap">
+                  <span x-text="fmtNum(c.input_tokens)"></span> / <span x-text="fmtNum(c.output_tokens)"></span>
+                </td>
+                <td class="px-4 py-2 text-right text-gray-600 whitespace-nowrap" x-text="fmtMs(c.duration_ms)"></td>
+                <td class="px-4 py-2 text-center">
+                  <span class="text-xs px-2 py-0.5 rounded" :class="statusClass(c.status)" x-text="c.status"></span>
+                </td>
+              </tr>
+            </template>
+            <tr x-show="!chatsLoading && chats.length === 0">
+              <td colspan="7" class="px-4 py-8 text-center text-gray-400 text-sm">No chat traces yet.</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="flex items-center justify-between px-4 py-3 border-t border-gray-100 text-sm">
+          <button @click="chatPrev()" :disabled="chatPage <= 1"
+                  class="text-blue-600 disabled:text-gray-300">← Prev</button>
+          <span class="text-gray-500 text-xs" x-text="`${chatPage} / ${chatPages} · ${chatTotal} total`"></span>
+          <button @click="chatNext()" :disabled="chatPage >= chatPages"
+                  class="text-blue-600 disabled:text-gray-300">Next →</button>
+        </div>
+      </div>
+
+      <!-- ════════ API REQUESTS TAB ════════ -->
+      <div x-show="tab === 'requests'" class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+        <div class="flex items-center gap-3 px-4 py-3 border-b border-gray-100">
+          <span class="text-sm font-semibold">API requests</span>
+          <input x-model="reqPath" @keydown.enter="reqPage = 1; loadRequests()" placeholder="filter path…"
+                 class="text-xs border border-gray-200 rounded px-2 py-1" />
+          <span class="text-xs text-gray-400" x-show="reqLoading">loading…</span>
+        </div>
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50 text-xs text-gray-500">
+            <tr>
+              <th class="text-left font-medium px-4 py-2">When</th>
+              <th class="text-left font-medium px-4 py-2">Method</th>
+              <th class="text-left font-medium px-4 py-2">Path</th>
+              <th class="text-center font-medium px-4 py-2">Status</th>
+              <th class="text-right font-medium px-4 py-2">Duration</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="r in requests" :key="r.id">
+              <tr class="border-t border-gray-50">
+                <td class="px-4 py-2 text-gray-500 whitespace-nowrap" x-text="fmtDate(r.created_at)"></td>
+                <td class="px-4 py-2"><span class="text-xs px-2 py-0.5 rounded" :class="methodClass(r.method)" x-text="r.method"></span></td>
+                <td class="px-4 py-2 font-mono text-xs" x-text="r.path"></td>
+                <td class="px-4 py-2 text-center font-semibold" :class="codeClass(r.status_code)" x-text="r.status_code"></td>
+                <td class="px-4 py-2 text-right text-gray-600 whitespace-nowrap" x-text="fmtMs(r.duration_ms)"></td>
+              </tr>
+            </template>
+            <tr x-show="!reqLoading && requests.length === 0">
+              <td colspan="5" class="px-4 py-8 text-center text-gray-400 text-sm">No API requests logged yet.</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="flex items-center justify-between px-4 py-3 border-t border-gray-100 text-sm">
+          <button @click="reqPrev()" :disabled="reqPage <= 1" class="text-blue-600 disabled:text-gray-300">← Prev</button>
+          <span class="text-gray-500 text-xs" x-text="`${reqPage} / ${reqPages} · ${reqTotal} total`"></span>
+          <button @click="reqNext()" :disabled="reqPage >= reqPages" class="text-blue-600 disabled:text-gray-300">Next →</button>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- ═══════════════════════════ TRACE DETAIL DRAWER ═══════════════════════════ -->
+  <div x-show="detail || detailLoading" class="fixed inset-0 z-40" x-cloak>
+    <div class="absolute inset-0 bg-black/30" @click="closeTrace()"></div>
+    <div class="absolute top-0 right-0 bottom-0 w-full max-w-2xl bg-white shadow-2xl overflow-y-auto scrollbar-thin">
+      <div class="sticky top-0 bg-white border-b border-gray-100 px-5 py-3 flex items-center justify-between">
+        <span class="text-sm font-semibold">Chat trace</span>
+        <button @click="closeTrace()" class="text-gray-400 hover:text-gray-700 text-lg leading-none">×</button>
+      </div>
+
+      <div x-show="detailLoading" class="p-6 text-sm text-gray-400">Loading…</div>
+
+      <template x-if="detail">
+        <div class="p-5 space-y-5">
+          <!-- summary -->
+          <div class="grid grid-cols-2 gap-3 text-sm">
+            <div><span class="text-gray-400 text-xs">Status</span><br>
+              <span class="text-xs px-2 py-0.5 rounded" :class="statusClass(detail.status)" x-text="detail.status"></span></div>
+            <div><span class="text-gray-400 text-xs">When</span><br><span x-text="fmtDate(detail.created_at)"></span></div>
+            <div><span class="text-gray-400 text-xs">Rounds</span><br><span x-text="detail.n_rounds"></span></div>
+            <div><span class="text-gray-400 text-xs">Duration</span><br><span x-text="fmtMs(detail.duration_ms)"></span></div>
+            <div><span class="text-gray-400 text-xs">Tokens (in/out)</span><br>
+              <span x-text="`${fmtNum(detail.input_tokens)} / ${fmtNum(detail.output_tokens)}`"></span></div>
+            <div><span class="text-gray-400 text-xs">Model</span><br><span class="font-mono text-xs" x-text="detail.model"></span></div>
+          </div>
+
+          <div x-show="detail.error_message" class="bg-red-50 text-red-700 text-xs rounded p-3" x-text="detail.error_message"></div>
+
+          <div>
+            <div class="text-xs text-gray-400 mb-1">User query</div>
+            <div class="bg-gray-50 rounded p-3 text-sm" x-text="detail.user_query"></div>
+          </div>
+
+          <div>
+            <div class="text-xs text-gray-400 mb-1">Final answer</div>
+            <div class="bg-gray-50 rounded p-3 text-sm whitespace-pre-wrap" x-text="detail.final_answer || '—'"></div>
+          </div>
+
+          <!-- tool calls -->
+          <div>
+            <div class="text-xs font-semibold text-gray-500 mb-2"
+                 x-text="`Tool calls (${detail.tool_calls?.length || 0})`"></div>
+            <div class="space-y-2">
+              <template x-for="tc in detail.tool_calls" :key="tc.id">
+                <div class="border border-gray-100 rounded-lg" x-data="{ open: false }">
+                  <button @click="open = !open" class="w-full flex items-center justify-between px-3 py-2 text-left">
+                    <span class="text-sm">
+                      <span class="text-xs text-gray-400 mr-1" x-text="`r${tc.round_index}`"></span>
+                      <span x-text="toolLabel(tc.tool_name)"></span>
+                    </span>
+                    <span class="text-xs text-gray-400">
+                      <span x-show="tc.result_count != null" x-text="`${tc.result_count} results · `"></span>
+                      <span x-text="fmtMs(tc.duration_ms)"></span>
+                      <span x-text="open ? ' ▲' : ' ▼'"></span>
+                    </span>
+                  </button>
+                  <div x-show="open" class="px-3 pb-3 space-y-2">
+                    <div>
+                      <div class="text-xs text-gray-400 mb-0.5">input</div>
+                      <pre class="bg-slate-900 text-slate-100 text-xs rounded p-2 overflow-x-auto scrollbar-thin" x-text="prettyJson(tc.tool_input)"></pre>
+                    </div>
+                    <div>
+                      <div class="text-xs text-gray-400 mb-0.5">output</div>
+                      <pre class="bg-slate-900 text-slate-100 text-xs rounded p-2 overflow-x-auto max-h-72 overflow-y-auto scrollbar-thin" x-text="prettyJson(tc.tool_output)"></pre>
+                    </div>
+                  </div>
+                </div>
+              </template>
+              <div x-show="!detail.tool_calls?.length" class="text-xs text-gray-400">No tools were called.</div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+</body>
+</html>
