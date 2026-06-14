@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Macro RAG</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/chat.js"></script>
+  <script src="/js/app.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    .scrollbar-thin::-webkit-scrollbar { width: 4px; }
+    .scrollbar-thin::-webkit-scrollbar-thumb { background: #475569; border-radius: 2px; }
+  </style>
+</head>
+<body class="h-full bg-gray-50 text-gray-900 antialiased" x-data="app()" x-init="init()" x-cloak>
+
+  <!-- ═══════════════════════════════════ TOP NAV ═══════════════════════════════════ -->
+  <nav class="fixed top-0 left-0 right-0 h-14 z-30 bg-slate-900 flex items-center px-5 gap-4 shadow-lg">
+    <span class="text-white font-semibold text-sm tracking-wide shrink-0">Macro RAG</span>
+
+    <!-- Search (browse mode only) -->
+    <div x-show="mode === 'browse'" class="flex-1 max-w-lg">
+      <input
+        x-model="q"
+        @keydown.enter="applyFilters()"
+        type="text"
+        placeholder="Search key points, trade ideas…"
+        class="w-full bg-slate-700 text-white placeholder-slate-400 text-sm rounded-lg px-4 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+    </div>
+
+    <!-- Chat title -->
+    <div x-show="mode === 'chat'" class="flex-1 text-slate-400 text-sm">Macro Research Assistant</div>
+
+    <!-- Mode toggle -->
+    <div class="flex rounded-lg overflow-hidden border border-slate-600 shrink-0">
+      <button
+        @click="mode = 'browse'"
+        :class="mode === 'browse' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
+        class="px-4 py-1.5 text-xs font-medium transition-colors"
+      >Browse</button>
+      <button
+        @click="mode = 'chat'"
+        :class="mode === 'chat' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
+        class="px-4 py-1.5 text-xs font-medium transition-colors"
+      >Chat</button>
+    </div>
+  </nav>
+
+  <!-- ═══════════════════════════════════ LAYOUT ════════════════════════════════════ -->
+  <div class="flex pt-14 min-h-screen">
+
+    <!-- ── SIDEBAR ── -->
+    <aside class="fixed top-14 bottom-0 left-0 w-60 bg-slate-800 text-slate-200 overflow-y-auto z-20 scrollbar-thin">
+
+      <!-- Browse filters -->
+      <div x-show="mode === 'browse'" class="p-4 space-y-5">
+
+        <!-- Date range -->
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Date Range</p>
+          <input x-model="dateFrom" @change="applyFilters()" type="date" class="w-full bg-slate-700 text-slate-200 text-xs rounded px-2 py-1.5 mb-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          <input x-model="dateTo"   @change="applyFilters()" type="date" class="w-full bg-slate-700 text-slate-200 text-xs rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+        </div>
+
+        <!-- Banks -->
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Banks</p>
+          <div class="max-h-36 overflow-y-auto scrollbar-thin space-y-1">
+            <template x-for="b in banks" :key="b.shortform">
+              <label class="flex items-center gap-2 text-xs cursor-pointer hover:text-white group">
+                <input type="checkbox" :value="b.shortform" x-model="selectedBanks" @change="applyFilters()" class="rounded text-blue-500 bg-slate-700 border-slate-500" />
+                <span x-text="b.shortform" class="group-hover:text-white"></span>
+              </label>
+            </template>
+          </div>
+        </div>
+
+        <!-- Topics (key points / summaries tabs) -->
+        <div x-show="['key-points', 'summaries', 'disagreements'].includes(tab)">
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Topics</p>
+          <div class="max-h-36 overflow-y-auto scrollbar-thin space-y-1">
+            <template x-for="t in topics" :key="t.name">
+              <label class="flex items-center gap-2 text-xs cursor-pointer hover:text-white group">
+                <input type="checkbox" :value="t.name" x-model="selectedTopics" @change="applyFilters()" class="rounded text-blue-500 bg-slate-700 border-slate-500" />
+                <span x-text="t.name" class="group-hover:text-white"></span>
+              </label>
+            </template>
+          </div>
+        </div>
+
+        <!-- Asset class (trade ideas) -->
+        <div x-show="tab === 'trade-ideas' || (tab === 'summaries' && summaryType === 'trade')">
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Asset Class</p>
+          <div class="space-y-1">
+            <template x-for="ac in assetClassOptions" :key="ac">
+              <label class="flex items-center gap-2 text-xs cursor-pointer hover:text-white group">
+                <input type="checkbox" :value="ac" x-model="selectedAssetClasses" @change="applyFilters()" class="rounded text-blue-500 bg-slate-700 border-slate-500" />
+                <span x-text="ac" class="group-hover:text-white"></span>
+              </label>
+            </template>
+          </div>
+        </div>
+
+        <!-- Geographies -->
+        <div x-show="tab !== 'summaries'">
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Geography</p>
+          <div class="max-h-36 overflow-y-auto scrollbar-thin space-y-1">
+            <template x-for="g in geos" :key="g.name">
+              <label class="flex items-center gap-2 text-xs cursor-pointer hover:text-white group">
+                <input type="checkbox" :value="g.name" x-model="selectedGeos" @change="applyFilters()" class="rounded text-blue-500 bg-slate-700 border-slate-500" />
+                <span x-text="g.name" class="group-hover:text-white"></span>
+              </label>
+            </template>
+          </div>
+        </div>
+
+        <!-- Sentiment (key points only) -->
+        <div x-show="tab === 'key-points'">
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Sentiment</p>
+          <div class="space-y-1">
+            <template x-for="s in sentimentOptions" :key="s">
+              <label class="flex items-center gap-2 text-xs cursor-pointer hover:text-white group">
+                <input type="checkbox" :value="s" x-model="selectedSentiments" @change="applyFilters()" class="rounded text-blue-500 bg-slate-700 border-slate-500" />
+                <span x-text="s" class="group-hover:text-white capitalize"></span>
+              </label>
+            </template>
+          </div>
+        </div>
+
+        <!-- Time reference (key points only) -->
+        <div x-show="tab === 'key-points'">
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Time Reference</p>
+          <div class="space-y-1">
+            <label class="flex items-center gap-2 text-xs cursor-pointer hover:text-white">
+              <input type="radio" name="timeref" value="" x-model="timeRef" @change="applyFilters()" class="text-blue-500 bg-slate-700 border-slate-500" />
+              <span>All</span>
+            </label>
+            <template x-for="tr in timeRefOptions" :key="tr">
+              <label class="flex items-center gap-2 text-xs cursor-pointer hover:text-white">
+                <input type="radio" name="timeref" :value="tr" x-model="timeRef" @change="applyFilters()" class="text-blue-500 bg-slate-700 border-slate-500" />
+                <span x-text="tr" class="capitalize"></span>
+              </label>
+            </template>
+          </div>
+        </div>
+
+        <!-- Confirmed only (disagreements) -->
+        <div x-show="tab === 'disagreements'">
+          <label class="flex items-center gap-2 text-xs cursor-pointer hover:text-white">
+            <input type="checkbox" x-model="confirmedOnly" @change="applyFilters()" class="rounded text-blue-500 bg-slate-700 border-slate-500" />
+            <span>Confirmed only</span>
+          </label>
+        </div>
+
+        <!-- Clear filters -->
+        <button
+          @click="clearFilters()"
+          class="w-full text-xs text-slate-400 hover:text-white border border-slate-600 rounded py-1.5 transition-colors"
+        >Clear filters</button>
+      </div>
+
+      <!-- Chat sidebar -->
+      <div x-show="mode === 'chat'" class="p-4">
+        <button @click="clearChat()" class="w-full text-xs bg-slate-700 hover:bg-slate-600 text-white rounded py-1.5 transition-colors">
+          + New conversation
+        </button>
+        <p class="text-xs text-slate-500 mt-4 text-center">Powered by claude-sonnet-4-6</p>
+      </div>
+    </aside>
+
+    <!-- ── MAIN CONTENT ── -->
+    <main class="ml-60 flex-1 flex flex-col">
+
+      <!-- ── BROWSE MODE ── -->
+      <div x-show="mode === 'browse'" class="flex-1 p-6">
+
+        <!-- Tab bar -->
+        <div class="flex gap-1 border-b border-gray-200 mb-6">
+          <template x-for="t in tabs" :key="t.id">
+            <button
+              @click="setTab(t.id)"
+              :class="tab === t.id
+                ? 'border-b-2 border-blue-600 text-blue-700 font-medium'
+                : 'text-gray-500 hover:text-gray-700'"
+              class="px-4 py-2 text-sm transition-colors -mb-px"
+              x-text="t.label"
+            ></button>
+          </template>
+        </div>
+
+        <!-- Summaries sub-tab -->
+        <div x-show="tab === 'summaries'" class="flex gap-2 mb-4">
+          <button
+            @click="setSummaryType('topic')"
+            :class="summaryType === 'topic' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'"
+            class="text-xs px-3 py-1 rounded-full transition-colors"
+          >Topic summaries</button>
+          <button
+            @click="setSummaryType('trade')"
+            :class="summaryType === 'trade' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'"
+            class="text-xs px-3 py-1 rounded-full transition-colors"
+          >Trade summaries</button>
+        </div>
+
+        <!-- Stats bar -->
+        <div class="flex items-center justify-between mb-4 text-xs text-gray-500">
+          <span x-show="!loading" x-text="total ? `${total.toLocaleString()} results` : 'No results'"></span>
+          <span x-show="loading">Loading…</span>
+          <span x-show="total > 0 && !loading" x-text="`Page ${page} of ${totalPages}`"></span>
+        </div>
+
+        <!-- Error -->
+        <div x-show="errorMsg" class="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3" x-text="errorMsg"></div>
+
+        <!-- Loading skeleton -->
+        <div x-show="loading" class="space-y-3">
+          <template x-for="i in [1,2,3,4,5]" :key="i">
+            <div class="bg-white rounded-xl border border-gray-100 p-4 animate-pulse">
+              <div class="h-3 bg-gray-200 rounded w-1/4 mb-3"></div>
+              <div class="h-3 bg-gray-200 rounded w-full mb-2"></div>
+              <div class="h-3 bg-gray-200 rounded w-3/4"></div>
+            </div>
+          </template>
+        </div>
+
+        <!-- ── KEY POINTS ── -->
+        <div x-show="!loading && tab === 'key-points'" class="space-y-3">
+          <template x-for="kp in (tab === 'key-points' ? items : [])" :key="kp.key_point_id">
+            <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:border-gray-200 transition-colors">
+              <!-- Header -->
+              <div class="flex items-start justify-between gap-3 mb-2">
+                <div class="flex flex-wrap items-center gap-1.5 min-w-0">
+                  <span class="text-xs font-bold bg-slate-800 text-white px-2 py-0.5 rounded shrink-0" x-text="kp.effective_source_org || kp.source_org"></span>
+                  <template x-for="t in (kp.topics || []).slice(0, 3)" :key="t">
+                    <span class="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded" x-text="t"></span>
+                  </template>
+                  <template x-for="g in (kp.geographies || []).slice(0, 2)" :key="g">
+                    <span class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded" x-text="g"></span>
+                  </template>
+                </div>
+                <span class="text-xs text-gray-400 shrink-0 mt-0.5" x-text="fmtDate(kp.email_sent_dt)"></span>
+              </div>
+              <!-- Sentiment + time ref -->
+              <div class="flex items-center gap-2 mb-2">
+                <span :class="sentimentClass(kp.sentiment)" class="text-xs px-2 py-0.5 rounded-full font-medium" x-text="kp.sentiment || 'unknown'"></span>
+                <span x-show="kp.time_reference" class="text-xs text-gray-400 capitalize" x-text="kp.time_reference"></span>
+              </div>
+              <!-- Text -->
+              <p class="text-sm text-gray-800 leading-relaxed mb-2" x-text="trunc(kp.key_point_text, 280)"></p>
+              <!-- Citation -->
+              <p
+                x-show="kp.key_point_citation"
+                class="text-xs text-gray-500 italic border-l-2 border-gray-200 pl-2 mb-3 leading-relaxed"
+                x-text="trunc(kp.key_point_citation, 180)"
+              ></p>
+              <!-- Footer -->
+              <div class="flex items-center justify-between">
+                <span class="text-xs text-gray-400" x-text="kp.email_subject ? trunc(kp.email_subject, 60) : ''"></span>
+                <button
+                  @click="openEmail(kp.email_content_hash, kp.key_point_citation)"
+                  class="text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
+                >View email →</button>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- ── TRADE IDEAS ── -->
+        <div x-show="!loading && tab === 'trade-ideas'" class="space-y-3">
+          <template x-for="ti in (tab === 'trade-ideas' ? items : [])" :key="ti.trade_idea_id">
+            <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:border-gray-200 transition-colors">
+              <div class="flex items-start justify-between gap-3 mb-2">
+                <div class="flex flex-wrap items-center gap-1.5 min-w-0">
+                  <span class="text-xs font-bold bg-slate-800 text-white px-2 py-0.5 rounded shrink-0" x-text="ti.effective_source_org || ti.source_org"></span>
+                  <span x-show="ti.asset_class" class="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded" x-text="ti.asset_class"></span>
+                  <template x-for="g in (ti.geographies || []).slice(0, 2)" :key="g">
+                    <span class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded" x-text="g"></span>
+                  </template>
+                </div>
+                <span class="text-xs text-gray-400 shrink-0 mt-0.5" x-text="fmtDate(ti.email_sent_dt)"></span>
+              </div>
+
+              <span x-show="ti.time_horizon" class="inline-block text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded mb-2" x-text="ti.time_horizon"></span>
+
+              <p class="text-sm text-gray-800 leading-relaxed mb-2" x-text="trunc(ti.trade_idea_text, 280)"></p>
+
+              <!-- Legs -->
+              <div x-show="ti.legs && ti.legs.length" class="flex flex-wrap gap-1.5 mb-2">
+                <template x-for="(leg, i) in (ti.legs || [])" :key="i">
+                  <span class="text-xs font-mono bg-gray-100 text-gray-700 px-2 py-0.5 rounded" x-text="`${leg.direction || ''} ${leg.instrument || ''}`.trim()"></span>
+                </template>
+              </div>
+
+              <!-- Price targets -->
+              <div x-show="ti.target_price || ti.stop_price" class="text-xs text-gray-500 mb-2 flex gap-4">
+                <span x-show="ti.target_price">Target: <span class="font-mono text-green-700 font-medium" x-text="ti.target_price"></span></span>
+                <span x-show="ti.stop_price">Stop: <span class="font-mono text-red-600 font-medium" x-text="ti.stop_price"></span></span>
+              </div>
+
+              <div class="flex justify-end">
+                <button
+                  @click="openEmail(ti.email_content_hash, ti.trade_idea_citation)"
+                  class="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                >View email →</button>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- ── DISAGREEMENTS ── -->
+        <div x-show="!loading && tab === 'disagreements'" class="space-y-3">
+          <template x-for="d in (tab === 'disagreements' ? items : [])" :key="d.disagreement_id">
+            <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:border-gray-200 transition-colors">
+              <div class="flex items-start justify-between gap-3 mb-3">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="font-semibold text-sm text-gray-800" x-text="d.group_key"></span>
+                  <span x-show="d.geography" class="text-xs text-gray-500" x-text="`· ${d.geography}`"></span>
+                  <span :class="scaleClass(d.scale)" class="text-xs px-2 py-0.5 rounded-full font-medium" x-text="d.scale"></span>
+                </div>
+                <span class="text-xs text-gray-400 shrink-0" x-text="`${fmtDateShort(d.window_start)} – ${fmtDateShort(d.window_end)}`"></span>
+              </div>
+
+              <p class="text-xs text-gray-500 mb-3" x-text="`${d.n_banks} banks · sentiment spread: ${d.sentiment_spread}`"></p>
+
+              <!-- Bank positions grid -->
+              <div class="grid grid-cols-2 gap-2">
+                <template x-for="pos in (d.bank_positions || [])" :key="pos.source_org">
+                  <div class="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+                    <span class="text-xs font-bold text-gray-700 shrink-0" x-text="pos.source_org"></span>
+                    <span :class="sentimentClass(pos.sentiment)" class="text-xs px-1.5 py-0.5 rounded-full" x-text="pos.sentiment"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- ── SUMMARIES ── -->
+        <div x-show="!loading && tab === 'summaries'" class="space-y-3">
+          <template x-for="(s, i) in (tab === 'summaries' ? items : [])" :key="i">
+            <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:border-gray-200 transition-colors">
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                  <span class="font-semibold text-sm text-gray-800" x-text="s.topic || s.group_key"></span>
+                  <span class="text-xs text-gray-400" x-text="s.kp_count ? `${s.kp_count} sources` : ''"></span>
+                </div>
+                <span class="text-xs text-gray-400" x-text="`${fmtDateShort(s.window_start)} – ${fmtDateShort(s.window_end)}`"></span>
+              </div>
+
+              <ul class="space-y-1.5 mb-3">
+                <template x-for="(bullet, i) in (s.bullets || [])" :key="i">
+                  <li class="flex gap-2 text-sm text-gray-700 leading-relaxed">
+                    <span class="text-gray-300 shrink-0 mt-0.5">•</span>
+                    <span x-text="bullet"></span>
+                  </li>
+                </template>
+              </ul>
+
+              <div x-show="s.source_orgs && s.source_orgs.length" class="flex flex-wrap gap-1">
+                <template x-for="org in (s.source_orgs || [])" :key="org">
+                  <span class="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded" x-text="org"></span>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- Empty state -->
+        <div x-show="!loading && items.length === 0 && !errorMsg" class="text-center py-20 text-gray-400">
+          <div class="text-3xl mb-3">🔍</div>
+          <p class="text-sm">No results found. Try adjusting your filters.</p>
+        </div>
+
+        <!-- Pagination -->
+        <div x-show="!loading && total > limit" class="flex items-center justify-between mt-6 text-sm">
+          <span class="text-gray-500 text-xs" x-text="`${total.toLocaleString()} total results`"></span>
+          <div class="flex items-center gap-2">
+            <button @click="prevPage()" :disabled="page <= 1" class="px-3 py-1.5 text-xs rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">← Prev</button>
+            <span class="text-xs text-gray-500" x-text="`${page} / ${totalPages}`"></span>
+            <button @click="nextPage()" :disabled="page >= totalPages" class="px-3 py-1.5 text-xs rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Next →</button>
+          </div>
+        </div>
+      </div><!-- /browse -->
+
+      <!-- ── CHAT MODE ── -->
+      <div x-show="mode === 'chat'" class="flex-1 flex flex-col" style="height: calc(100vh - 3.5rem);">
+
+        <!-- Messages -->
+        <div id="chat-messages" class="flex-1 overflow-y-auto p-6 space-y-5">
+
+          <!-- Welcome -->
+          <div x-show="messages.length === 0" class="text-center pt-16">
+            <div class="text-4xl mb-4">📊</div>
+            <p class="text-lg font-medium text-gray-700 mb-1">Ask anything about the macro data</p>
+            <p class="text-sm text-gray-400 mb-8">Key points, trade ideas, disagreements, sentiment — all from sell-side research</p>
+            <div class="space-y-2 max-w-md mx-auto">
+              <template x-for="prompt in [
+                'What do banks say about US inflation?',
+                'Show me bearish trade ideas on FX from GS',
+                'Which banks disagree on China growth?',
+                'How many bullish key points on rates this month?'
+              ]" :key="prompt">
+                <button
+                  @click="chatInput = prompt; sendMessage()"
+                  class="block w-full text-sm text-left bg-white border border-gray-200 rounded-xl px-4 py-2.5 hover:border-blue-300 hover:bg-blue-50 transition-colors text-gray-700"
+                  x-text="prompt"
+                ></button>
+              </template>
+            </div>
+          </div>
+
+          <!-- Messages list -->
+          <template x-for="(msg, i) in messages" :key="i">
+            <div>
+              <!-- User -->
+              <div x-show="msg.role === 'user'" class="flex justify-end">
+                <div class="bg-blue-600 text-white rounded-2xl rounded-br-sm px-4 py-2.5 max-w-xl text-sm leading-relaxed" x-text="msg.content"></div>
+              </div>
+
+              <!-- Assistant -->
+              <div x-show="msg.role === 'assistant'" class="space-y-2 max-w-2xl">
+                <!-- Tool call cards -->
+                <template x-for="(tc, j) in (msg.toolCalls || [])" :key="j">
+                  <div class="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden text-xs">
+                    <button
+                      @click="tc.expanded = !tc.expanded"
+                      class="w-full flex items-center justify-between px-3 py-2 text-slate-600 hover:bg-slate-100 transition-colors"
+                    >
+                      <span x-text="toolLabel(tc)"></span>
+                      <span class="flex items-center gap-2 text-slate-400">
+                        <span x-text="toolResultSummary(tc)"></span>
+                        <span x-text="tc.expanded ? '▲' : '▼'" class="text-xs"></span>
+                      </span>
+                    </button>
+                    <div x-show="tc.expanded" class="border-t border-slate-200 px-3 py-2 bg-white">
+                      <pre class="text-xs text-slate-500 font-mono overflow-auto max-h-32 whitespace-pre-wrap" x-text="JSON.stringify(tc.input, null, 2)"></pre>
+                    </div>
+                  </div>
+                </template>
+
+                <!-- Text response -->
+                <div
+                  x-show="msg.content"
+                  class="bg-white rounded-2xl rounded-bl-sm border border-gray-100 shadow-sm px-4 py-3 text-sm text-gray-800 leading-relaxed whitespace-pre-wrap"
+                  x-text="msg.content"
+                ></div>
+
+                <!-- Streaming indicator -->
+                <div x-show="msg.streaming" class="flex items-center gap-1 text-gray-400 text-xs px-1">
+                  <div class="flex gap-0.5">
+                    <span class="inline-block w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style="animation-delay: 0ms"></span>
+                    <span class="inline-block w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style="animation-delay: 150ms"></span>
+                    <span class="inline-block w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style="animation-delay: 300ms"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- Input -->
+        <div class="border-t bg-white px-6 py-4 shrink-0">
+          <div class="flex gap-3 max-w-2xl mx-auto">
+            <textarea
+              x-model="chatInput"
+              @keydown.enter.prevent="if (!$event.shiftKey) sendMessage()"
+              @input="$el.style.height = 'auto'; $el.style.height = Math.min($el.scrollHeight, 120) + 'px'"
+              :disabled="chatLoading"
+              placeholder="Ask about macro views, trade ideas, disagreements…"
+              rows="1"
+              class="flex-1 resize-none border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-400 disabled:opacity-50 leading-relaxed"
+              style="min-height: 42px"
+            ></textarea>
+            <button
+              @click="sendMessage()"
+              :disabled="chatLoading || !chatInput.trim()"
+              class="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0 self-end"
+            >
+              <span x-show="!chatLoading">Send</span>
+              <span x-show="chatLoading" class="inline-flex gap-0.5">
+                <span class="w-1 h-1 rounded-full bg-white/70 animate-bounce" style="animation-delay:0ms"></span>
+                <span class="w-1 h-1 rounded-full bg-white/70 animate-bounce" style="animation-delay:150ms"></span>
+                <span class="w-1 h-1 rounded-full bg-white/70 animate-bounce" style="animation-delay:300ms"></span>
+              </span>
+            </button>
+          </div>
+          <p class="text-center text-xs text-gray-400 mt-2">Enter to send · Shift+Enter for new line</p>
+        </div>
+      </div><!-- /chat -->
+
+    </main><!-- /main -->
+  </div><!-- /layout -->
+
+  <!-- ═══════════════════════════════ EMAIL VIEWER ══════════════════════════════════ -->
+
+  <!-- Backdrop -->
+  <div
+    x-show="emailOpen"
+    x-transition:enter="transition ease-out duration-200"
+    x-transition:enter-start="opacity-0"
+    x-transition:enter-end="opacity-100"
+    x-transition:leave="transition ease-in duration-150"
+    x-transition:leave-start="opacity-100"
+    x-transition:leave-end="opacity-0"
+    @click="closeEmail()"
+    class="fixed inset-0 bg-black/40 z-40"
+  ></div>
+
+  <!-- Panel -->
+  <div
+    x-show="emailOpen"
+    x-transition:enter="transition ease-out duration-300"
+    x-transition:enter-start="translate-x-full"
+    x-transition:enter-end="translate-x-0"
+    x-transition:leave="transition ease-in duration-200"
+    x-transition:leave-start="translate-x-0"
+    x-transition:leave-end="translate-x-full"
+    @keydown.escape.window="closeEmail()"
+    class="fixed right-0 top-0 bottom-0 w-[46%] bg-white shadow-2xl z-50 flex flex-col"
+  >
+    <!-- Panel header -->
+    <div class="flex items-start justify-between px-5 py-4 bg-slate-800 text-white shrink-0">
+      <div class="min-w-0 flex-1">
+        <p class="font-semibold text-sm truncate" x-text="currentEmail?.email_subject || (emailLoading ? 'Loading…' : 'Email')"></p>
+        <p x-show="currentEmail" class="text-xs text-slate-300 mt-0.5 truncate" x-text="`${currentEmail?.email_from || ''} · ${fmtDate(currentEmail?.email_sent_dt)}`"></p>
+      </div>
+      <button @click="closeEmail()" class="text-slate-400 hover:text-white ml-4 shrink-0 text-lg leading-none">✕</button>
+    </div>
+
+    <!-- Panel body -->
+    <div class="flex-1 overflow-y-auto">
+
+      <!-- Loading -->
+      <div x-show="emailLoading" class="flex items-center justify-center h-40 text-gray-400 text-sm">Loading…</div>
+
+      <div x-show="!emailLoading && currentEmail">
+
+        <!-- Matched citation callout -->
+        <div x-show="currentCitation" class="mx-4 mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <p class="text-xs font-semibold text-yellow-700 mb-1">Matched key point context</p>
+          <p class="text-xs text-gray-700 italic leading-relaxed" x-text="currentCitation"></p>
+        </div>
+
+        <!-- Email body -->
+        <div class="p-4">
+          <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Email body</p>
+          <pre
+            class="text-xs text-gray-700 whitespace-pre-wrap font-sans leading-relaxed"
+            x-html="highlightedBody()"
+          ></pre>
+        </div>
+
+        <!-- Related key points -->
+        <div x-show="currentEmail?.related_key_points?.length" class="border-t px-4 py-4">
+          <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
+            Related Key Points
+            (<span x-text="currentEmail?.related_key_points?.length"></span>)
+          </p>
+          <div class="space-y-2">
+            <template x-for="(kp, i) in (currentEmail?.related_key_points || [])" :key="i">
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="flex items-center gap-1.5 mb-1.5">
+                  <span class="text-xs font-bold text-gray-600" x-text="kp.effective_source_org || kp.source_org"></span>
+                  <span :class="sentimentClass(kp.sentiment)" class="text-xs px-1.5 py-0.5 rounded-full" x-text="kp.sentiment"></span>
+                </div>
+                <p class="text-xs text-gray-700 leading-relaxed" x-text="trunc(kp.key_point_text, 150)"></p>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Related trade ideas -->
+        <div x-show="currentEmail?.related_trade_ideas?.length" class="border-t px-4 py-4">
+          <p class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
+            Related Trade Ideas
+            (<span x-text="currentEmail?.related_trade_ideas?.length"></span>)
+          </p>
+          <div class="space-y-2">
+            <template x-for="(ti, i) in (currentEmail?.related_trade_ideas || [])" :key="i">
+              <div class="bg-purple-50 rounded-lg p-3">
+                <div class="flex items-center gap-1.5 mb-1.5">
+                  <span class="text-xs font-bold text-gray-600" x-text="ti.effective_source_org || ti.source_org"></span>
+                  <span x-show="ti.asset_class" class="text-xs bg-purple-200 text-purple-800 px-1.5 py-0.5 rounded-full" x-text="ti.asset_class"></span>
+                </div>
+                <p class="text-xs text-gray-700 leading-relaxed" x-text="trunc(ti.trade_idea_text, 150)"></p>
+              </div>
+            </template>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Panel footer -->
+    <div class="border-t px-4 py-3 flex items-center gap-2 bg-gray-50 shrink-0">
+      <a
+        x-show="currentEmail"
+        :href="api.emailRawUrl(currentEmail?.email_content_hash)"
+        download
+        class="text-xs bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg transition-colors"
+      >📥 Download .eml</a>
+      <span class="text-xs text-gray-400 ml-auto" x-text="currentEmail?.file_name || ''"></span>
+    </div>
+  </div>
+
+</body>
+</html>
