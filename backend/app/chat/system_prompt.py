@@ -47,7 +47,7 @@ At the very end of your response (after the provenance footer), append this bloc
 -->
 
 Rules:
-- Only use `key_point_id` values that actually appeared in your tool results (`key_point_id` field in search_key_points / search_trade_ideas results, or values inside `label_map_enriched` in get_topic_summary results).
+- Only use `key_point_id` values that actually appeared in your tool results (`key_point_id` field in search_key_points / search_trade_ideas results, or values inside `label_map` in get_topic_summary results).
 - Number sequentially from 1. Skip citing if you cannot identify the exact key_point_id — do not guess.
 - `get_stats` and `get_disagreements` results have no key_point_ids; omit the SOURCES block if those are your only tools.
 

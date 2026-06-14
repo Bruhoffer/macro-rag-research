@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.chat.slim import slim_for_llm
 from app.chat.system_prompt import SYSTEM_PROMPT
 from app.chat.tools import TOOLS
 from app.chat.tracing import TraceRecorder
@@ -37,6 +38,30 @@ Db = Annotated[AsyncSession, Depends(get_db)]
 _claude = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
 
 MAX_TOOL_ROUNDS = 5  # prevent infinite loops
+
+# Prompt caching: the system prompt + tool defs are identical on every round and
+# every chat, so cache them (breakpoint on the system block caches tools+system;
+# a second breakpoint on the last tool keeps tools cached if the system text changes).
+_EPHEMERAL = {"type": "ephemeral"}
+_SYSTEM_CACHED = [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": _EPHEMERAL}]
+_TOOLS_CACHED = [*TOOLS[:-1], {**TOOLS[-1], "cache_control": _EPHEMERAL}]
+
+
+def _with_cache_breakpoint(history: list[dict]) -> list[dict]:
+    """Copy of history with an ephemeral cache breakpoint on the last content block
+    of the last message, so the growing prefix (incl. big tool results) is re-read at
+    cache-read price on later rounds. No-op on the round-0 string message."""
+    if not history:
+        return history
+    msgs = list(history)
+    last = dict(msgs[-1])
+    content = last.get("content")
+    if isinstance(content, list) and content and isinstance(content[-1], dict):
+        new_content = list(content)
+        new_content[-1] = {**new_content[-1], "cache_control": _EPHEMERAL}
+        last["content"] = new_content
+        msgs[-1] = last
+    return msgs
 
 
 class ChatRequest(BaseModel):
@@ -83,9 +108,9 @@ async def _tool_loop(
         async with _claude.messages.stream(
             model=CHAT_MODEL,
             max_tokens=4096,
-            system=SYSTEM_PROMPT,
-            tools=TOOLS,
-            messages=history,
+            system=_SYSTEM_CACHED,
+            tools=_TOOLS_CACHED,
+            messages=_with_cache_breakpoint(history),
         ) as stream:
             async for event in stream:
                 if hasattr(event, "type"):
@@ -143,7 +168,7 @@ async def _tool_loop(
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,
-                    "content": json.dumps(result, default=str),
+                    "content": json.dumps(slim_for_llm(tool_name, result), default=str),
                 })
 
             history.append({"role": "user", "content": tool_results})
