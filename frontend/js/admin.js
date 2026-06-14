@@ -2,6 +2,7 @@ function adminApp() {
   return {
     tab: 'chats',            // 'chats' | 'requests'
     stats: null,
+    refreshing: false,
 
     // chat traces
     chats: [],
@@ -25,6 +26,15 @@ function adminApp() {
 
     async init() {
       await Promise.all([this.loadStats(), this.loadChats()]);
+    },
+
+    // The dashboard fetches on load only (no polling) — re-fetch the active views.
+    async refresh() {
+      this.refreshing = true;
+      const jobs = [this.loadStats(), this.loadChats()];
+      if (this.tab === 'requests') jobs.push(this.loadRequests());
+      await Promise.all(jobs);
+      this.refreshing = false;
     },
 
     async loadStats() {

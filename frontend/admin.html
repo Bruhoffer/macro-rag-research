@@ -28,6 +28,11 @@
         :class="tab === 'requests' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
         class="px-4 py-1.5 text-xs font-medium transition-colors">API requests</button>
     </div>
+    <button @click="refresh()" :disabled="refreshing"
+      class="text-xs text-slate-300 hover:text-white shrink-0 disabled:opacity-50">
+      <span x-show="!refreshing">↻ Refresh</span>
+      <span x-show="refreshing">Refreshing…</span>
+    </button>
     <a href="/" class="text-xs text-slate-300 hover:text-white shrink-0">← Back to app</a>
   </nav>
 
