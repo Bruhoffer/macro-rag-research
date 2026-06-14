@@ -645,29 +645,28 @@ You don't need to manually verify the UI — I'll check it during development.
 
 ---
 
-### 🔄 Phase 3 — FastAPI Backend (IN PROGRESS)
+### ✅ Phase 3 — FastAPI Backend (COMPLETE)
 **Branch:** `phase/3-backend`  
 **Goal:** All API endpoints working, chat streaming working
 
 **Tasks:**
-- [ ] `backend/app/main.py` — FastAPI app, CORS, lifespan
-- [ ] `backend/app/config.py` — env vars: OPENAI_API_KEY, ANTHROPIC_API_KEY, DATABASE_URL
-- [ ] `backend/app/retrieval/hybrid.py` — hybrid search implementation
+- [x] `backend/app/main.py` — FastAPI app, CORS, lifespan
+- [x] `backend/app/config.py` — env vars: OPENAI_API_KEY, ANTHROPIC_API_KEY, DATABASE_URL
+- [x] `backend/app/retrieval/hybrid.py` — hybrid search implementation
   - `search_key_points(query, filters, top_k)` → RRF of semantic + BM25
   - `search_trade_ideas(query, filters, top_k)`
   - `search_emails(query, filters, top_k)` → chunk ANN → deduplicate by `email_content_hash` → fetch parent emails → join related key points + trade ideas on same hash → return `{email, matched_chunk, related_key_points[], related_trade_ideas[]}`
   - Query expansion: alias resolution from source_orgs + geographies reference tables
-- [ ] `backend/app/routers/key_points.py` — browse + search endpoints
-- [ ] `backend/app/routers/trade_ideas.py`
-- [ ] `backend/app/routers/disagreements.py`
-- [ ] `backend/app/routers/summaries.py` — topic_summaries + trade_summaries
-- [ ] `backend/app/routers/emails.py` — viewer endpoint + raw .eml streaming
-  - Raw .eml path: `../raw-emails/{MM}/{DD}/{file_name}` (relative to backend/)
-- [ ] `backend/app/routers/meta.py` — topics, geographies, source_orgs lists
-- [ ] `backend/app/chat/tools.py` — Claude tool definitions (6 tools, see schema above)
-- [ ] `backend/app/chat/system_prompt.py` — system prompt with data model description, gotchas, approved entity lists
-- [ ] `backend/app/routers/chat.py` — SSE streaming endpoint, tool loop
-- [ ] Integration test: curl each endpoint, verify data shapes
+- [x] `backend/app/routers/key_points.py` — browse + search endpoints
+- [x] `backend/app/routers/trade_ideas.py`
+- [x] `backend/app/routers/disagreements.py`
+- [x] `backend/app/routers/summaries.py` — topic_summaries + trade_summaries
+- [x] `backend/app/routers/emails.py` — viewer endpoint + raw .eml streaming
+- [x] `backend/app/routers/meta.py` — topics, geographies, source_orgs lists
+- [x] `backend/app/chat/tools.py` — 6 Claude tool definitions
+- [x] `backend/app/chat/system_prompt.py` — system prompt with data model, approved entity lists, gotchas
+- [x] `backend/app/routers/chat.py` — SSE streaming endpoint, tool loop (max 5 rounds)
+- [x] Runtime bug fixes: `CAST(:x AS type)` instead of `::type`, BM25 WHERE clause, `::text = ANY()` for uuid arrays
 
 ---
 
