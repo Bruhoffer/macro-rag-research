@@ -220,5 +220,13 @@ __marimo__/
 # Docker volume data
 data/
 
+# Raw data exports — must never be committed (PII + proprietary research)
+raw-data/
+raw-emails/
+*.eml
+
+# git filter-repo replacement rules (contains the real strings being scrubbed)
+replacements.txt
+
 # DS_Store
 .DS_Store

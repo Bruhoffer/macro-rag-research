@@ -6,7 +6,8 @@ services:
     container_name: macro_rag_db
     environment:
       POSTGRES_USER: macrorag
-      POSTGRES_PASSWORD: macrorag
+      # Override via POSTGRES_PASSWORD in .env (docker compose auto-loads it for interpolation)
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-macrorag}
       POSTGRES_DB: macrorag
     ports:
       # host_port:container_port

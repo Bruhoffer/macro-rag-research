@@ -4,7 +4,7 @@ Project-specific rules for Claude Code when working in `email-ai/macro-rag/`.
 
 ## Project Context
 
-Macro RAG — a local-first analytics + chat system built on top of a macro hedge fund' macro research email exports. Full plan is in `PLAN.md`.
+Macro RAG — a local-first analytics + chat system built on top of a macro hedge fund's research email exports. Full plan is in `PLAN.md`.
 
 **DO NOT touch** `email-ai/email-ai/` (old Databricks codebase) or any file outside `email-ai/macro-rag/`.
 
