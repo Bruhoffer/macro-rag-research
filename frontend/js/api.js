@@ -25,7 +25,6 @@ const api = {
   topicSummaries: (p) => _get('/api/topic-summaries', p),
   tradeSummaries: (p) => _get('/api/trade-summaries', p),
   email:          (hash) => _get(`/api/emails/${hash}`),
-  emailRawUrl:    (hash) => `/api/emails/${hash}/raw`,
   metaBanks:      () => _get('/api/meta/source-orgs'),
   metaTopics:     () => _get('/api/meta/topics'),
   metaGeos:       () => _get('/api/meta/geographies'),

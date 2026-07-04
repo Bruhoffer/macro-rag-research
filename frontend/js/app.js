@@ -19,7 +19,8 @@ function renderMarkdown(text, sources, streaming) {
     for (const line of blockMatch[1].trim().split('\n')) {
       const m = line.match(/^\[\^(\d+)\]:\s*(.+)$/);
       if (!m) continue;
-      const src = (sources || []).find(s => s.key_point_id === m[2].trim());
+      const id = m[2].trim();
+      const src = (sources || []).find(s => s.key_point_id === id || s.trade_idea_id === id);
       if (src) resolvedMap[m[1]] = src;
     }
   }

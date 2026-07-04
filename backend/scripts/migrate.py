@@ -27,7 +27,23 @@ import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from app.utils.redact import make_name_scrubber, scrub_text  # noqa: E402
+
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
+
+# Known sender/recipient names (gitignored; scripts/build_scrub_literals.py).
+_LITERALS_PATH = Path(__file__).parent.parent / "scrub_literals.txt"
+_scrub_names = (
+    make_name_scrubber(_LITERALS_PATH.read_text().splitlines())
+    if _LITERALS_PATH.exists()
+    else (lambda t: t)
+)
+
+
+def full_scrub(text):
+    """PII scrub applied to all free text at ingestion (HOSTING_PLAN.md B.1)."""
+    return _scrub_names(scrub_text(text))
 
 RAW_DATA = Path(os.environ["RAW_DATA_DIR"])
 DB_URL = os.environ["DATABASE_URL_SYNC"]
@@ -281,20 +297,25 @@ def load_emails(cur) -> dict:
         if not h:
             st.skip("missing email_content_hash")
             continue
+        # PII scrub (HOSTING_PLAN.md B.1): senders/recipients are never stored;
+        # subject/body have header lines + addresses removed before insert so
+        # chunks and denormalised copies downstream inherit clean text.
+        subject = full_scrub(na_str(r["email_subject"]))
+        body    = full_scrub(na_str(r["email_body"]))
         rows.append((
             h,
             na_str(r["file_name"]),
-            na_str(r["email_subject"]),
-            na_str(r["email_from"]),
-            na_str(r["email_to"]),
+            subject,
+            None,  # email_from — scrubbed
+            None,  # email_to — scrubbed
             na_str(r["email_sent_dt"]),
-            na_str(r["email_body"]),
-            na_int(r["email_body_length"]),
+            body,
+            len(body) if body else None,
         ))
         lookup[h] = {
             "file_name":     na_str(r["file_name"]),
-            "email_subject": na_str(r["email_subject"]),
-            "email_body":    na_str(r["email_body"]),
+            "email_subject": subject,
+            "email_body":    body,
             "email_sent_dt": na_str(r["email_sent_dt"]),
         }
 
@@ -356,7 +377,9 @@ def load_key_points(cur, email_lookup: dict):
             kp_id, h,
             na_str(r["email_sent_dt"]), em["email_subject"], em["file_name"],
             src, sug_src, effective_org(src, sug_src),
-            na_str(r["key_point_text"]), na_str(r["key_point_citation"]), na_str(r["key_point_context"]),
+            full_scrub(na_str(r["key_point_text"])),
+            full_scrub(na_str(r["key_point_citation"])),
+            full_scrub(na_str(r["key_point_context"])),
             topics or None, sug_topics or None, geos or None, sug_geos or None,
             sentiment_str, sent_score, time_ref, future_hor,
         ))
@@ -415,7 +438,9 @@ def load_trade_ideas(cur, email_lookup: dict):
             ti_id, h,
             na_str(r["email_sent_dt"]), em["email_subject"], em["file_name"],
             src, sug_src, effective_org(src, sug_src),
-            na_str(r["trade_idea_text"]), na_str(r["trade_idea_citation"]), na_str(r["trade_idea_context"]),
+            full_scrub(na_str(r["trade_idea_text"])),
+            full_scrub(na_str(r["trade_idea_citation"])),
+            full_scrub(na_str(r["trade_idea_context"])),
             na_str(e["asset_class"])           if has_enrich else None,
             na_str(e["suggested_asset_class"]) if has_enrich else None,
             na_str(e["time_horizon"])          if has_enrich else None,

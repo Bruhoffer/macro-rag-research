@@ -629,12 +629,6 @@
 
     <!-- Panel footer -->
     <div class="border-t px-4 py-3 flex items-center gap-2 bg-gray-50 shrink-0">
-      <a
-        x-show="currentEmail"
-        :href="api.emailRawUrl(currentEmail?.email_content_hash)"
-        download
-        class="text-xs bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg transition-colors"
-      >📥 Download .eml</a>
       <span class="text-xs text-gray-400 ml-auto" x-text="currentEmail?.file_name || ''"></span>
     </div>
   </div>

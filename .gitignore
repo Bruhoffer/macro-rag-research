@@ -228,5 +228,8 @@ raw-emails/
 # git filter-repo replacement rules (contains the real strings being scrubbed)
 replacements.txt
 
+# scrub literal list — an index of the names being hidden, itself PII
+scrub_literals.txt
+
 # DS_Store
 .DS_Store

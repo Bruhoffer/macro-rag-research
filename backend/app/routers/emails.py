@@ -1,14 +1,12 @@
-from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import RAW_EMAILS_DIR
 from app.db import get_db
 from app.retrieval.hybrid import search_emails
+from app.utils.redact import redact_addresses
 
 router = APIRouter(tags=["emails"])
 
@@ -59,13 +57,15 @@ async def get_email(email_hash: str, db: Db) -> dict[str, Any]:
         ORDER BY email_sent_dt
     """), {"hash": email_hash})
 
+    # DB is scrubbed at ingestion (see scripts/scrub_pii.py); redact_addresses
+    # here is defense-in-depth only.
     return {
         "email_content_hash": e[0],
-        "email_subject": e[1] or "",
-        "email_from": e[2] or "",
+        "email_subject": redact_addresses(e[1]) or "",
+        "email_from": redact_addresses(e[2]) or "",
         "email_sent_dt": e[3],
         "file_name": e[4] or "",
-        "email_body": e[5] or "",
+        "email_body": redact_addresses(e[5]) or "",
         "related_key_points": [
             {
                 "key_point_id": str(r[0]),
@@ -90,37 +90,15 @@ async def get_email(email_hash: str, db: Db) -> dict[str, Any]:
     }
 
 
-@router.get("/{email_hash}/raw")
-async def get_raw_email(email_hash: str, db: Db) -> FileResponse:
-    """Stream the raw .eml file from the local filesystem."""
-    row = await db.execute(text("""
-        SELECT file_name, email_sent_dt FROM emails WHERE email_content_hash = :hash
-    """), {"hash": email_hash})
-    e = row.fetchone()
-    if not e:
-        raise HTTPException(status_code=404, detail="Email not found")
-
-    file_name, sent_dt = e
-    if not file_name or not sent_dt:
-        raise HTTPException(status_code=404, detail="No raw file available")
-
-    # raw-emails/MM/DD/filename.eml
-    path = RAW_EMAILS_DIR / f"{sent_dt.month:02d}" / f"{sent_dt.day:02d}" / file_name
-    if not path.exists():
-        raise HTTPException(status_code=404, detail=f"File not found on disk: {path.name}")
-
-    return FileResponse(path, media_type="message/rfc822", filename=file_name)
-
-
 def _email_result_to_dict(r) -> dict[str, Any]:
     return {
         "email_content_hash": r.email_content_hash,
-        "email_subject": r.email_subject,
-        "email_from": r.email_from,
+        "email_subject": redact_addresses(r.email_subject),
+        "email_from": redact_addresses(r.email_from),
         "email_sent_dt": r.email_sent_dt,
         "file_name": r.file_name,
-        "email_body": r.email_body,
-        "matched_chunk": r.matched_chunk,
+        "email_body": redact_addresses(r.email_body),
+        "matched_chunk": redact_addresses(r.matched_chunk),
         "related_key_points": [vars(kp) for kp in r.related_key_points],
         "related_trade_ideas": [vars(ti) for ti in r.related_trade_ideas],
     }
