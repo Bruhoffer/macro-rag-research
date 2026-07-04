@@ -233,3 +233,6 @@ scrub_literals.txt
 
 # DS_Store
 .DS_Store
+
+# hosting/security plan — local only
+HOSTING_PLAN.md
