@@ -58,7 +58,7 @@ function chatMixin() {
             try { event = JSON.parse(line.slice(6)); } catch { continue; }
 
             if (event.type === 'text') {
-              this.messages[msgIdx].content += event.content;
+              this.messages[msgIdx].content += (event.content ?? '');
               this.$nextTick(() => this._scrollChat());
 
             } else if (event.type === 'tool_call') {
