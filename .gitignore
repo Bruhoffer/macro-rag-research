@@ -245,9 +245,6 @@ infra/.terraform/
 infra/*.tfstate
 infra/*.tfstate.*
 kubeconfig*
-# internal ops docs â keep local
-DEPLOY.md
-CLAUDE.md
 
 # internal ops docs — keep local
 DEPLOY.md
