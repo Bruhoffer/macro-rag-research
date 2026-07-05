@@ -28,7 +28,11 @@ function chatMixin() {
       try {
         const response = await fetch('/api/chat', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'text/event-stream',
+            ...authHeaders(),
+          },
           body: JSON.stringify({ messages: apiMessages }),
         });
 

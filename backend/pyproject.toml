@@ -25,6 +25,9 @@ dependencies = [
     # Environment
     "python-dotenv>=1.0",
 
+    # Security
+    "slowapi>=0.1.9",              # per-IP rate limiting
+
     # Utilities
     "httpx>=0.27",                 # async HTTP client (for streaming)
     "tiktoken>=0.7",               # token counting for chunking

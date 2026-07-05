@@ -18,18 +18,20 @@ import time
 from typing import Annotated, Any, AsyncGenerator
 
 import anthropic
-from fastapi import APIRouter, Depends
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.chat.pricing import estimate_cost
 from app.chat.slim import slim_for_llm
 from app.chat.system_prompt import SYSTEM_PROMPT
 from app.chat.tools import TOOLS
 from app.chat.tracing import TraceRecorder
-from app.config import ANTHROPIC_API_KEY, CHAT_MODEL
+from app.config import ANTHROPIC_API_KEY, CHAT_DAILY_BUDGET_USD, CHAT_MODEL
 from app.db import get_db
+from app.middleware.rate_limit import CHAT_RATE_LIMIT, limiter
 from app.retrieval.hybrid import search_emails, search_key_points, search_trade_ideas
 
 router = APIRouter(tags=["chat"])
@@ -68,8 +70,30 @@ class ChatRequest(BaseModel):
     messages: list[dict[str, Any]]
 
 
+async def _todays_spend_usd(db: AsyncSession) -> float:
+    """Estimated Claude spend since UTC midnight, from chat_traces token counts."""
+    rows = await db.execute(text("""
+        SELECT model,
+               sum(coalesce(input_tokens, 0)),
+               sum(coalesce(output_tokens, 0)),
+               sum(coalesce(cache_read_tokens, 0)),
+               sum(coalesce(cache_creation_tokens, 0))
+        FROM chat_traces
+        WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'utc')
+        GROUP BY model
+    """))
+    return sum(estimate_cost(m, i, o, cr, cc) or 0.0 for m, i, o, cr, cc in rows)
+
+
 @router.post("/chat")
-async def chat(req: ChatRequest, db: Db):
+@limiter.limit(CHAT_RATE_LIMIT)  # each call is a paid Claude invocation (B.4)
+async def chat(request: Request, req: ChatRequest, db: Db):
+    # Global daily budget cap — bounds total spend no matter how many IPs (B.4)
+    if await _todays_spend_usd(db) >= CHAT_DAILY_BUDGET_USD:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Daily chat budget reached — try again tomorrow (UTC)"},
+        )
     return StreamingResponse(
         _stream(req.messages, db),
         media_type="text/event-stream",

@@ -6,8 +6,14 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
+from app.config import ALLOWED_ORIGIN
 from app.db import AsyncSessionLocal
+from app.middleware.auth import require_api_key
+from app.middleware.rate_limit import limiter
 from app.models.traces import ApiRequestLog
 from app.retrieval.hybrid import load_aliases
 from app.routers import admin, chat, disagreements, emails, key_points, meta, summaries, trade_ideas
@@ -22,12 +28,20 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Macro RAG API", lifespan=lifespan)
 
+# Per-IP rate limiting (B.4) — default ceiling on all routes; chat has its own
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[ALLOWED_ORIGIN],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
+
+# Bearer-token gate on /api/* — registered after CORS so CORS wraps it
+app.middleware("http")(require_api_key)
 
 
 @app.middleware("http")
