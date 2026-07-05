@@ -13,6 +13,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.config import ALLOWED_ORIGIN
 from app.db import AsyncSessionLocal
 from app.middleware.auth import require_api_key
+from app.middleware.body_limit import BodySizeLimitMiddleware
 from app.middleware.rate_limit import limiter
 from app.models.traces import ApiRequestLog
 from app.retrieval.hybrid import load_aliases
@@ -39,6 +40,9 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+# Reject oversized /api/* bodies before they're read (B.4 / hardening 1.2)
+app.add_middleware(BodySizeLimitMiddleware)
 
 # Bearer-token gate on /api/* — registered after CORS so CORS wraps it
 app.middleware("http")(require_api_key)

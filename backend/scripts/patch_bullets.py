@@ -11,11 +11,13 @@ from pathlib import Path
 
 import pandas as pd
 import psycopg2
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 RAW_DATA = Path(__file__).parent.parent.parent.parent / "raw-data"
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", "postgresql://macrorag:macrorag@localhost:5433/macrorag"
-)
+# Require the sync URL from env — no hardcoded credential fallback (matches migrate.py).
+DATABASE_URL = os.environ["DATABASE_URL_SYNC"].replace("postgresql+asyncpg://", "postgresql://")
 
 
 def _parse(s):

@@ -20,7 +20,7 @@ from typing import Annotated, Any, AsyncGenerator
 import anthropic
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -66,8 +66,22 @@ def _with_cache_breakpoint(history: list[dict]) -> list[dict]:
     return msgs
 
 
+MAX_MESSAGES = 40          # a long conversation, not an abuse vector
+MAX_MESSAGE_CHARS = 8000   # per-message content ceiling
+
+
 class ChatRequest(BaseModel):
     messages: list[dict[str, Any]]
+
+    @field_validator("messages")
+    @classmethod
+    def _bound_messages(cls, v: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if len(v) > MAX_MESSAGES:
+            raise ValueError(f"too many messages (max {MAX_MESSAGES})")
+        for m in v:
+            if len(str(m.get("content", ""))) > MAX_MESSAGE_CHARS:
+                raise ValueError(f"message content too long (max {MAX_MESSAGE_CHARS} chars)")
+        return v
 
 
 async def _todays_spend_usd(db: AsyncSession) -> float:
@@ -108,8 +122,10 @@ async def _stream(messages: list[dict], db: AsyncSession) -> AsyncGenerator[str,
             yield f"data: {json.dumps(event, default=str)}\n\n"
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
     except Exception as exc:
+        # Full detail stays server-side (trace + stderr); client gets a generic message.
         recorder.fail(str(exc))
-        yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+        print(f"[chat] stream failed: {exc}", file=sys.stderr)
+        yield f"data: {json.dumps({'type': 'error', 'message': 'Chat failed — please try again.'})}\n\n"
     finally:
         # Best-effort: a trace-write failure must never break the user response.
         try:

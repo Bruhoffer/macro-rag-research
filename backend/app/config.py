@@ -25,7 +25,15 @@ MACRO_RAG_API_KEY: str = _require("MACRO_RAG_API_KEY")
 ADMIN_API_KEY: str = _require("ADMIN_API_KEY")
 
 # Hard ceiling on total estimated Claude spend per UTC day across all users.
-CHAT_DAILY_BUDGET_USD: float = float(os.environ.get("CHAT_DAILY_BUDGET_USD", "5"))
+def _daily_budget() -> float:
+    raw = os.environ.get("CHAT_DAILY_BUDGET_USD", "5")
+    try:
+        return max(0.0, float(raw))   # negative would disable the cap — clamp to 0
+    except ValueError as exc:
+        raise SystemExit(f"CHAT_DAILY_BUDGET_USD must be a number, got {raw!r}") from exc
+
+
+CHAT_DAILY_BUDGET_USD: float = _daily_budget()
 
 # The only origin allowed to make cross-origin API calls (same-origin needs no CORS).
 ALLOWED_ORIGIN: str = os.environ.get("ALLOWED_ORIGIN", "http://localhost:8000")
