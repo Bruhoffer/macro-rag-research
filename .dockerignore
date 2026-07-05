@@ -1,0 +1,17 @@
+# Never ship secrets, data, or local state into the image
+.env
+.git
+data/
+raw-data/
+raw-emails/
+*.eml
+backend/.venv
+backend/scrub_literals.txt
+**/__pycache__
+.ruff_cache
+.pytest_cache
+.playwright-mcp
+# Docs are not needed at runtime
+ARCHITECTURE.html
+HOSTING_PLAN.md
+PLAN.md

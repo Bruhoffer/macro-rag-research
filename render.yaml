@@ -1,0 +1,30 @@
+# Render blueprint — deploys the Dockerfile as a web service.
+# Provision the pgvector Postgres separately (see DEPLOY.md Step 1) and set the
+# secret env vars in the dashboard; they are intentionally NOT in this file.
+services:
+  - type: web
+    name: macro-rag
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /
+    envVars:
+      - key: ACCESS_MODE
+        value: open
+      - key: CHAT_DAILY_BUDGET_USD
+        value: "5"
+      # Secrets — set these in the Render dashboard, not here:
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_URL_SYNC
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ADMIN_API_KEY
+        sync: false
+      - key: MACRO_RAG_API_KEY
+        sync: false
+      - key: ALLOWED_ORIGIN
+        sync: false
