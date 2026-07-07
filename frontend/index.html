@@ -7,9 +7,9 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js" integrity="sha384-NNQgBjjuhtXzPmmy4gurS5X7P4uTt1DThyevz4Ua0IVK5+kazYQI1W27JHjbbxQz" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js" integrity="sha384-+VfUPEb0PdtChMwmBcBmykRMDd+v6D/oFmB3rZM/puCMDYcIvF968OimRh4KQY9a" crossorigin="anonymous"></script>
-  <script src="/js/api.js"></script>
-  <script src="/js/chat.js"></script>
-  <script src="/js/app.js"></script>
+  <script src="/js/api.js?v=5"></script>
+  <script src="/js/chat.js?v=5"></script>
+  <script src="/js/app.js?v=5"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
   <style>
     [x-cloak] { display: none !important; }
@@ -33,19 +33,18 @@
   <nav class="fixed top-0 left-0 right-0 h-14 z-30 bg-slate-900 flex items-center px-5 gap-4 shadow-lg">
     <span class="text-white font-semibold text-sm tracking-wide shrink-0">Macro RAG</span>
 
-    <!-- Search (browse mode only) -->
-    <div x-show="mode === 'browse'" class="flex-1 max-w-lg">
+    <!-- Middle section (flex-1 keeps toggle pinned right) -->
+    <div class="flex-1 max-w-lg">
       <input
+        x-show="mode === 'browse'"
         x-model="q"
         @keydown.enter="applyFilters()"
         type="text"
         placeholder="Search key points, trade ideas…"
         class="w-full bg-slate-700 text-white placeholder-slate-400 text-sm rounded-lg px-4 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
       />
+      <span x-show="mode === 'chat'" class="text-slate-400 text-sm">Macro Research Assistant</span>
     </div>
-
-    <!-- Chat title -->
-    <div x-show="mode === 'chat'" class="flex-1 text-slate-400 text-sm">Macro Research Assistant</div>
 
     <!-- Mode toggle -->
     <div class="flex rounded-lg overflow-hidden border border-slate-600 shrink-0">
@@ -69,19 +68,33 @@
     <aside class="fixed top-14 bottom-0 left-0 w-60 bg-slate-800 text-slate-200 overflow-y-auto z-20 scrollbar-thin">
 
       <!-- Browse filters -->
-      <div x-show="mode === 'browse'" class="p-4 space-y-5">
+      <div x-show="mode === 'browse'" class="p-4 space-y-4">
 
-        <!-- Date range -->
+        <!-- Active filter indicator -->
+        <div x-show="activeFilterCount > 0" class="flex items-center justify-between bg-slate-700/50 rounded-lg px-3 py-2">
+          <span class="text-xs text-blue-400">
+            <span x-text="activeFilterCount"></span> filter<span x-show="activeFilterCount !== 1">s</span> active
+          </span>
+          <button @click="clearFilters()" class="text-xs text-slate-400 hover:text-white underline">Clear</button>
+        </div>
+
+        <!-- Date range (always open) -->
         <div>
           <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Date Range</p>
           <input x-model="dateFrom" @change="applyFilters()" type="date" class="w-full bg-slate-700 text-slate-200 text-xs rounded px-2 py-1.5 mb-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500" />
           <input x-model="dateTo"   @change="applyFilters()" type="date" class="w-full bg-slate-700 text-slate-200 text-xs rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500" />
         </div>
 
-        <!-- Banks -->
+        <!-- Banks (collapsible) -->
         <div>
-          <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Banks</p>
-          <div class="max-h-36 overflow-y-auto scrollbar-thin space-y-1">
+          <button @click="filterCollapsed.banks = !filterCollapsed.banks" class="w-full flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-200 transition-colors">
+            <span>Banks</span>
+            <span class="flex items-center gap-1.5">
+              <span x-show="selectedBanks.length" class="bg-blue-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center" x-text="selectedBanks.length"></span>
+              <span x-text="filterCollapsed.banks ? '+' : '−'" class="text-sm leading-none"></span>
+            </span>
+          </button>
+          <div x-show="!filterCollapsed.banks" x-transition class="mt-2 max-h-36 overflow-y-auto scrollbar-thin space-y-1">
             <template x-for="b in banks" :key="b.shortform">
               <label class="flex items-center gap-2 text-xs cursor-pointer hover:text-white group">
                 <input type="checkbox" :value="b.shortform" x-model="selectedBanks" @change="applyFilters()" class="rounded text-blue-500 bg-slate-700 border-slate-500" />
@@ -91,10 +104,16 @@
           </div>
         </div>
 
-        <!-- Topics (key points / summaries tabs) -->
+        <!-- Topics (collapsible) -->
         <div x-show="['key-points', 'summaries', 'disagreements'].includes(tab)">
-          <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Topics</p>
-          <div class="max-h-36 overflow-y-auto scrollbar-thin space-y-1">
+          <button @click="filterCollapsed.topics = !filterCollapsed.topics" class="w-full flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-200 transition-colors">
+            <span>Topics</span>
+            <span class="flex items-center gap-1.5">
+              <span x-show="selectedTopics.length" class="bg-blue-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center" x-text="selectedTopics.length"></span>
+              <span x-text="filterCollapsed.topics ? '+' : '−'" class="text-sm leading-none"></span>
+            </span>
+          </button>
+          <div x-show="!filterCollapsed.topics" x-transition class="mt-2 max-h-36 overflow-y-auto scrollbar-thin space-y-1">
             <template x-for="t in topics" :key="t.name">
               <label class="flex items-center gap-2 text-xs cursor-pointer hover:text-white group">
                 <input type="checkbox" :value="t.name" x-model="selectedTopics" @change="applyFilters()" class="rounded text-blue-500 bg-slate-700 border-slate-500" />
@@ -104,10 +123,16 @@
           </div>
         </div>
 
-        <!-- Asset class (trade ideas) -->
+        <!-- Asset class (collapsible) -->
         <div x-show="tab === 'trade-ideas' || (tab === 'summaries' && summaryType === 'trade')">
-          <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Asset Class</p>
-          <div class="space-y-1">
+          <button @click="filterCollapsed.assetClass = !filterCollapsed.assetClass" class="w-full flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-200 transition-colors">
+            <span>Asset Class</span>
+            <span class="flex items-center gap-1.5">
+              <span x-show="selectedAssetClasses.length" class="bg-blue-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center" x-text="selectedAssetClasses.length"></span>
+              <span x-text="filterCollapsed.assetClass ? '+' : '−'" class="text-sm leading-none"></span>
+            </span>
+          </button>
+          <div x-show="!filterCollapsed.assetClass" x-transition class="mt-2 space-y-1">
             <template x-for="ac in assetClassOptions" :key="ac">
               <label class="flex items-center gap-2 text-xs cursor-pointer hover:text-white group">
                 <input type="checkbox" :value="ac" x-model="selectedAssetClasses" @change="applyFilters()" class="rounded text-blue-500 bg-slate-700 border-slate-500" />
@@ -117,10 +142,16 @@
           </div>
         </div>
 
-        <!-- Geographies -->
+        <!-- Geographies (collapsible) -->
         <div x-show="tab !== 'summaries'">
-          <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Geography</p>
-          <div class="max-h-36 overflow-y-auto scrollbar-thin space-y-1">
+          <button @click="filterCollapsed.geos = !filterCollapsed.geos" class="w-full flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-200 transition-colors">
+            <span>Geography</span>
+            <span class="flex items-center gap-1.5">
+              <span x-show="selectedGeos.length" class="bg-blue-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center" x-text="selectedGeos.length"></span>
+              <span x-text="filterCollapsed.geos ? '+' : '−'" class="text-sm leading-none"></span>
+            </span>
+          </button>
+          <div x-show="!filterCollapsed.geos" x-transition class="mt-2 max-h-36 overflow-y-auto scrollbar-thin space-y-1">
             <template x-for="g in geos" :key="g.name">
               <label class="flex items-center gap-2 text-xs cursor-pointer hover:text-white group">
                 <input type="checkbox" :value="g.name" x-model="selectedGeos" @change="applyFilters()" class="rounded text-blue-500 bg-slate-700 border-slate-500" />
@@ -130,10 +161,16 @@
           </div>
         </div>
 
-        <!-- Sentiment (key points only) -->
+        <!-- Sentiment (collapsible, key points only) -->
         <div x-show="tab === 'key-points'">
-          <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Sentiment</p>
-          <div class="space-y-1">
+          <button @click="filterCollapsed.sentiment = !filterCollapsed.sentiment" class="w-full flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-200 transition-colors">
+            <span>Sentiment</span>
+            <span class="flex items-center gap-1.5">
+              <span x-show="selectedSentiments.length" class="bg-blue-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center" x-text="selectedSentiments.length"></span>
+              <span x-text="filterCollapsed.sentiment ? '+' : '−'" class="text-sm leading-none"></span>
+            </span>
+          </button>
+          <div x-show="!filterCollapsed.sentiment" x-transition class="mt-2 space-y-1">
             <template x-for="s in sentimentOptions" :key="s">
               <label class="flex items-center gap-2 text-xs cursor-pointer hover:text-white group">
                 <input type="checkbox" :value="s" x-model="selectedSentiments" @change="applyFilters()" class="rounded text-blue-500 bg-slate-700 border-slate-500" />
@@ -143,10 +180,16 @@
           </div>
         </div>
 
-        <!-- Time reference (key points only) -->
+        <!-- Time reference (collapsible, key points only) -->
         <div x-show="tab === 'key-points'">
-          <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Time Reference</p>
-          <div class="space-y-1">
+          <button @click="filterCollapsed.timeRef = !filterCollapsed.timeRef" class="w-full flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-200 transition-colors">
+            <span>Time Reference</span>
+            <span class="flex items-center gap-1.5">
+              <span x-show="timeRef" class="bg-blue-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">1</span>
+              <span x-text="filterCollapsed.timeRef ? '+' : '−'" class="text-sm leading-none"></span>
+            </span>
+          </button>
+          <div x-show="!filterCollapsed.timeRef" x-transition class="mt-2 space-y-1">
             <label class="flex items-center gap-2 text-xs cursor-pointer hover:text-white">
               <input type="radio" name="timeref" value="" x-model="timeRef" @change="applyFilters()" class="text-blue-500 bg-slate-700 border-slate-500" />
               <span>All</span>
@@ -168,8 +211,9 @@
           </label>
         </div>
 
-        <!-- Clear filters -->
+        <!-- Clear filters (shown only when no active filter indicator is visible) -->
         <button
+          x-show="activeFilterCount === 0"
           @click="clearFilters()"
           class="w-full text-xs text-slate-400 hover:text-white border border-slate-600 rounded py-1.5 transition-colors"
         >Clear filters</button>
@@ -242,26 +286,17 @@
         <!-- ── KEY POINTS ── -->
         <div x-show="!loading && tab === 'key-points'" class="space-y-3">
           <template x-for="kp in (tab === 'key-points' ? items : [])" :key="kp.key_point_id">
-            <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:border-gray-200 transition-colors">
-              <!-- Header -->
-              <div class="flex items-start justify-between gap-3 mb-2">
-                <div class="flex flex-wrap items-center gap-1.5 min-w-0">
-                  <span class="text-xs font-bold bg-slate-800 text-white px-2 py-0.5 rounded shrink-0" x-text="kp.effective_source_org || kp.source_org"></span>
-                  <template x-for="t in (kp.topics || []).slice(0, 3)" :key="t">
-                    <span class="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded" x-text="t"></span>
-                  </template>
-                  <template x-for="g in (kp.geographies || []).slice(0, 2)" :key="g">
-                    <span class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded" x-text="g"></span>
-                  </template>
+            <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:border-gray-200 transition-colors border-l-4 border-l-blue-400">
+              <!-- Header: bank + date -->
+              <div class="flex items-center justify-between gap-3 mb-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="text-sm font-semibold text-gray-800" x-text="kp.effective_source_org || kp.source_org"></span>
+                  <span :class="sentimentClass(kp.sentiment)" class="text-xs px-2 py-0.5 rounded-full font-medium" x-text="kp.sentiment || 'unknown'"></span>
+                  <span x-show="kp.time_reference" class="text-xs text-gray-400 capitalize" x-text="kp.time_reference"></span>
                 </div>
-                <span class="text-xs text-gray-400 shrink-0 mt-0.5" x-text="fmtDate(kp.email_sent_dt)"></span>
+                <span class="text-xs text-gray-400 shrink-0" x-text="fmtDate(kp.email_sent_dt)"></span>
               </div>
-              <!-- Sentiment + time ref -->
-              <div class="flex items-center gap-2 mb-2">
-                <span :class="sentimentClass(kp.sentiment)" class="text-xs px-2 py-0.5 rounded-full font-medium" x-text="kp.sentiment || 'unknown'"></span>
-                <span x-show="kp.time_reference" class="text-xs text-gray-400 capitalize" x-text="kp.time_reference"></span>
-              </div>
-              <!-- Text -->
+              <!-- Primary content -->
               <p class="text-sm text-gray-800 leading-relaxed mb-2" x-text="trunc(kp.key_point_text, 280)"></p>
               <!-- Citation -->
               <p
@@ -269,9 +304,16 @@
                 class="text-xs text-gray-500 italic border-l-2 border-gray-200 pl-2 mb-3 leading-relaxed"
                 x-text="trunc(kp.key_point_citation, 180)"
               ></p>
-              <!-- Footer -->
-              <div class="flex items-center justify-between">
-                <span class="text-xs text-gray-400" x-text="kp.email_subject ? trunc(kp.email_subject, 60) : ''"></span>
+              <!-- Footer: tags + action -->
+              <div class="flex items-center justify-between pt-2 border-t border-gray-50">
+                <div class="flex flex-wrap items-center gap-1.5 min-w-0">
+                  <template x-for="t in (kp.topics || []).slice(0, 3)" :key="t">
+                    <span class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded" x-text="t"></span>
+                  </template>
+                  <template x-for="g in (kp.geographies || []).slice(0, 2)" :key="g">
+                    <span class="text-xs bg-gray-50 text-gray-400 px-2 py-0.5 rounded" x-text="g"></span>
+                  </template>
+                </div>
                 <button
                   @click="openEmail(kp.email_content_hash, kp.key_point_citation)"
                   class="text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
@@ -284,39 +326,39 @@
         <!-- ── TRADE IDEAS ── -->
         <div x-show="!loading && tab === 'trade-ideas'" class="space-y-3">
           <template x-for="ti in (tab === 'trade-ideas' ? items : [])" :key="ti.trade_idea_id">
-            <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:border-gray-200 transition-colors">
-              <div class="flex items-start justify-between gap-3 mb-2">
-                <div class="flex flex-wrap items-center gap-1.5 min-w-0">
-                  <span class="text-xs font-bold bg-slate-800 text-white px-2 py-0.5 rounded shrink-0" x-text="ti.effective_source_org || ti.source_org"></span>
-                  <span x-show="ti.asset_class" class="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded" x-text="ti.asset_class"></span>
-                  <template x-for="g in (ti.geographies || []).slice(0, 2)" :key="g">
-                    <span class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded" x-text="g"></span>
-                  </template>
+            <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:border-gray-200 transition-colors border-l-4 border-l-purple-400">
+              <!-- Header: bank + asset class + date -->
+              <div class="flex items-center justify-between gap-3 mb-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="text-sm font-semibold text-gray-800" x-text="ti.effective_source_org || ti.source_org"></span>
+                  <span x-show="ti.asset_class" class="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full" x-text="ti.asset_class"></span>
+                  <span x-show="ti.time_horizon" class="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full" x-text="ti.time_horizon"></span>
                 </div>
-                <span class="text-xs text-gray-400 shrink-0 mt-0.5" x-text="fmtDate(ti.email_sent_dt)"></span>
+                <span class="text-xs text-gray-400 shrink-0" x-text="fmtDate(ti.email_sent_dt)"></span>
               </div>
 
-              <span x-show="ti.time_horizon" class="inline-block text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded mb-2" x-text="ti.time_horizon"></span>
-
+              <!-- Primary content -->
               <p class="text-sm text-gray-800 leading-relaxed mb-2" x-text="trunc(ti.trade_idea_text, 280)"></p>
 
-              <!-- Legs -->
-              <div x-show="ti.legs && ti.legs.length" class="flex flex-wrap gap-1.5 mb-2">
+              <!-- Legs + prices (compact info bar) -->
+              <div x-show="(ti.legs && ti.legs.length) || ti.target_price || ti.stop_price" class="flex flex-wrap items-center gap-3 mb-2 text-xs">
                 <template x-for="(leg, i) in (ti.legs || [])" :key="i">
-                  <span class="text-xs font-mono bg-gray-100 text-gray-700 px-2 py-0.5 rounded" x-text="`${leg.direction || ''} ${leg.instrument || ''}`.trim()"></span>
+                  <span class="font-mono bg-gray-100 text-gray-700 px-2 py-0.5 rounded" x-text="`${leg.direction || ''} ${leg.instrument || ''}`.trim()"></span>
                 </template>
+                <span x-show="ti.target_price" class="text-gray-500">Target: <span class="font-mono text-green-700 font-medium" x-text="ti.target_price"></span></span>
+                <span x-show="ti.stop_price" class="text-gray-500">Stop: <span class="font-mono text-red-600 font-medium" x-text="ti.stop_price"></span></span>
               </div>
 
-              <!-- Price targets -->
-              <div x-show="ti.target_price || ti.stop_price" class="text-xs text-gray-500 mb-2 flex gap-4">
-                <span x-show="ti.target_price">Target: <span class="font-mono text-green-700 font-medium" x-text="ti.target_price"></span></span>
-                <span x-show="ti.stop_price">Stop: <span class="font-mono text-red-600 font-medium" x-text="ti.stop_price"></span></span>
-              </div>
-
-              <div class="flex justify-end">
+              <!-- Footer: geo tags + action -->
+              <div class="flex items-center justify-between pt-2 border-t border-gray-50">
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <template x-for="g in (ti.geographies || []).slice(0, 2)" :key="g">
+                    <span class="text-xs bg-gray-50 text-gray-400 px-2 py-0.5 rounded" x-text="g"></span>
+                  </template>
+                </div>
                 <button
                   @click="openEmail(ti.email_content_hash, ti.trade_idea_citation)"
-                  class="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                  class="text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
                 >View email →</button>
               </div>
             </div>
@@ -326,24 +368,52 @@
         <!-- ── DISAGREEMENTS ── -->
         <div x-show="!loading && tab === 'disagreements'" class="space-y-3">
           <template x-for="d in (tab === 'disagreements' ? items : [])" :key="d.disagreement_id">
-            <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:border-gray-200 transition-colors">
-              <div class="flex items-start justify-between gap-3 mb-3">
+            <div
+              class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:border-gray-200 transition-colors border-l-4"
+              :class="{'border-l-red-400': d.scale === 'High', 'border-l-amber-400': d.scale === 'Medium', 'border-l-sky-400': d.scale !== 'High' && d.scale !== 'Medium'}"
+            >
+              <!-- Header -->
+              <div class="flex items-start justify-between gap-3 mb-2">
                 <div class="flex flex-wrap items-center gap-2">
-                  <span class="font-semibold text-sm text-gray-800" x-text="d.group_key"></span>
-                  <span x-show="d.geography" class="text-xs text-gray-500" x-text="`· ${d.geography}`"></span>
+                  <span class="font-semibold text-base text-gray-900" x-text="d.group_key"></span>
+                  <span x-show="d.geography" class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded" x-text="d.geography"></span>
                   <span :class="scaleClass(d.scale)" class="text-xs px-2 py-0.5 rounded-full font-medium" x-text="d.scale"></span>
                 </div>
                 <span class="text-xs text-gray-400 shrink-0" x-text="`${fmtDateShort(d.window_start)} – ${fmtDateShort(d.window_end)}`"></span>
               </div>
 
-              <p class="text-xs text-gray-500 mb-3" x-text="`${d.n_banks} banks · sentiment spread: ${d.sentiment_spread}`"></p>
+              <p class="text-xs text-gray-500 mb-3" x-text="`${d.n_banks} banks · sentiment spread: ${d.sentiment_spread}` + (d.agent_confidence ? ` · confidence: ${Math.round(d.agent_confidence * 100)}%` : '')"></p>
 
-              <!-- Bank positions grid -->
-              <div class="grid grid-cols-2 gap-2">
-                <template x-for="pos in (d.bank_positions || [])" :key="pos.source_org">
+              <!-- Resolution summary -->
+              <p x-show="d.resolution_summary" class="text-sm text-gray-700 leading-relaxed mb-3" x-text="d.resolution_summary"></p>
+
+              <!-- Bank analysis (collapsible) -->
+              <details x-show="d.bank_analysis && d.bank_analysis.length" class="mb-3 group">
+                <summary class="cursor-pointer text-xs text-gray-400 hover:text-gray-600 select-none flex items-center gap-1">
+                  <span class="transition-transform group-open:rotate-90 inline-block">▶</span>
+                  <span x-text="`Bank positions (${(d.bank_analysis || []).length})`"></span>
+                </summary>
+                <div class="mt-2 space-y-2">
+                  <template x-for="(ba, bi) in (d.bank_analysis || [])" :key="bi">
+                    <div class="bg-gray-50 rounded-lg p-2.5">
+                      <div class="flex items-center gap-2 mb-1">
+                        <span class="text-xs font-bold text-gray-700" x-text="ba.source_org"></span>
+                        <span :class="sentimentClass(ba.bull_bear === 'bullish' ? 'bullish' : ba.bull_bear === 'bearish' ? 'bearish' : 'neutral')" class="text-xs px-1.5 py-0.5 rounded-full" x-text="ba.bull_bear"></span>
+                        <span x-show="ba.timeline" class="text-[10px] text-gray-400" x-text="ba.timeline"></span>
+                      </div>
+                      <p class="text-xs text-gray-600 leading-relaxed" x-text="ba.position_summary"></p>
+                    </div>
+                  </template>
+                </div>
+              </details>
+
+              <!-- Aggregated sentiment overview (shown when no bank_analysis) -->
+              <div x-show="!d.bank_analysis || !d.bank_analysis.length" class="grid grid-cols-2 gap-2">
+                <template x-for="(bp, bi) in aggregateBankPositions(d.bank_positions)" :key="bi">
                   <div class="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
-                    <span class="text-xs font-bold text-gray-700 shrink-0" x-text="pos.source_org"></span>
-                    <span :class="sentimentClass(pos.sentiment)" class="text-xs px-1.5 py-0.5 rounded-full" x-text="pos.sentiment"></span>
+                    <span class="text-xs font-bold text-gray-700 shrink-0" x-text="bp.source_org"></span>
+                    <span :class="sentimentClass(bp.sentiment)" class="text-xs px-1.5 py-0.5 rounded-full" x-text="bp.sentiment"></span>
+                    <span x-show="bp.count > 1" class="text-[10px] text-gray-400" x-text="`(${bp.count})`"></span>
                   </div>
                 </template>
               </div>
@@ -352,27 +422,31 @@
         </div>
 
         <!-- ── SUMMARIES ── -->
-        <div x-show="!loading && tab === 'summaries'" class="space-y-3">
+        <div
+          x-show="!loading && tab === 'summaries'"
+          class="space-y-3"
+          @click="$event.target.dataset.emailHash && openEmail($event.target.dataset.emailHash, $event.target.dataset.emailCitation || null)"
+        >
           <template x-for="(s, i) in (tab === 'summaries' ? items : [])" :key="i">
-            <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:border-gray-200 transition-colors">
+            <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 hover:border-gray-200 transition-colors border-l-4 border-l-emerald-400">
               <div class="flex items-center justify-between mb-3">
                 <div class="flex items-center gap-2">
-                  <span class="font-semibold text-sm text-gray-800" x-text="s.topic || s.group_key"></span>
+                  <span class="font-semibold text-base text-gray-900" x-text="s.topic || s.group_key"></span>
                   <span class="text-xs text-gray-400" x-text="s.kp_count ? `${s.kp_count} sources` : ''"></span>
                 </div>
                 <span class="text-xs text-gray-400" x-text="`${fmtDateShort(s.window_start)} – ${fmtDateShort(s.window_end)}`"></span>
               </div>
 
               <ul class="space-y-1.5 mb-3">
-                <template x-for="(bullet, i) in (s.bullets || [])" :key="i">
+                <template x-for="(bullet, bi) in (s.bullets || [])" :key="bi">
                   <li class="flex gap-2 text-sm text-gray-700 leading-relaxed">
                     <span class="text-gray-300 shrink-0 mt-0.5">•</span>
-                    <span x-text="bullet"></span>
+                    <span x-html="renderBullet(bullet, s)"></span>
                   </li>
                 </template>
               </ul>
 
-              <div x-show="s.source_orgs && s.source_orgs.length" class="flex flex-wrap gap-1">
+              <div x-show="s.source_orgs && s.source_orgs.length" class="flex flex-wrap gap-1 pt-2 border-t border-gray-50">
                 <template x-for="org in (s.source_orgs || [])" :key="org">
                   <span class="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded" x-text="org"></span>
                 </template>
@@ -594,10 +668,21 @@
           </p>
           <div class="space-y-2">
             <template x-for="(kp, i) in (currentEmail?.related_key_points || [])" :key="i">
-              <div class="bg-gray-50 rounded-lg p-3">
-                <div class="flex items-center gap-1.5 mb-1.5">
-                  <span class="text-xs font-bold text-gray-600" x-text="kp.effective_source_org || kp.source_org"></span>
-                  <span :class="sentimentClass(kp.sentiment)" class="text-xs px-1.5 py-0.5 rounded-full" x-text="kp.sentiment"></span>
+              <div
+                @click="highlightRelatedCitation(kp.key_point_citation)"
+                class="bg-gray-50 rounded-lg p-3 cursor-pointer hover:bg-gray-100 transition-colors"
+                :class="currentCitation === kp.key_point_citation ? 'ring-2 ring-blue-400' : ''"
+              >
+                <div class="flex items-center justify-between mb-1.5">
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-xs font-bold text-gray-600" x-text="kp.effective_source_org || kp.source_org"></span>
+                    <span :class="sentimentClass(kp.sentiment)" class="text-xs px-1.5 py-0.5 rounded-full" x-text="kp.sentiment"></span>
+                  </div>
+                  <button
+                    @click.stop="viewInBrowse('key-points', kp.key_point_id)"
+                    class="text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
+                    title="View in browse tab"
+                  >View →</button>
                 </div>
                 <p class="text-xs text-gray-700 leading-relaxed" x-text="trunc(kp.key_point_text, 150)"></p>
               </div>
@@ -613,10 +698,21 @@
           </p>
           <div class="space-y-2">
             <template x-for="(ti, i) in (currentEmail?.related_trade_ideas || [])" :key="i">
-              <div class="bg-purple-50 rounded-lg p-3">
-                <div class="flex items-center gap-1.5 mb-1.5">
-                  <span class="text-xs font-bold text-gray-600" x-text="ti.effective_source_org || ti.source_org"></span>
-                  <span x-show="ti.asset_class" class="text-xs bg-purple-200 text-purple-800 px-1.5 py-0.5 rounded-full" x-text="ti.asset_class"></span>
+              <div
+                @click="highlightRelatedCitation(ti.trade_idea_citation)"
+                class="bg-purple-50 rounded-lg p-3 cursor-pointer hover:bg-purple-100 transition-colors"
+                :class="currentCitation === ti.trade_idea_citation ? 'ring-2 ring-purple-400' : ''"
+              >
+                <div class="flex items-center justify-between mb-1.5">
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-xs font-bold text-gray-600" x-text="ti.effective_source_org || ti.source_org"></span>
+                    <span x-show="ti.asset_class" class="text-xs bg-purple-200 text-purple-800 px-1.5 py-0.5 rounded-full" x-text="ti.asset_class"></span>
+                  </div>
+                  <button
+                    @click.stop="viewInBrowse('trade-ideas', ti.trade_idea_id)"
+                    class="text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
+                    title="View in browse tab"
+                  >View →</button>
                 </div>
                 <p class="text-xs text-gray-700 leading-relaxed" x-text="trunc(ti.trade_idea_text, 150)"></p>
               </div>

@@ -51,19 +51,30 @@ async def list_disagreements(
         params["date_to"] = date_to
 
     where = ("WHERE " + " AND ".join(filters)) if filters else ""
+    validation_filter = "AND is_false_positive = false" if confirmed_only else ""
     count_sql = text(f"SELECT count(*) FROM disagreements {where}")
     data_sql = text(f"""
-        SELECT disagreement_id, group_key, geography, window_start, window_end,
-               scale, n_banks, sentiment_spread, bank_positions
-        FROM disagreements {where}
-        ORDER BY window_end DESC, scale DESC
+        SELECT d.disagreement_id, d.group_key, d.geography, d.window_start, d.window_end,
+               d.scale, d.n_banks, d.sentiment_spread, d.bank_positions,
+               v.resolution_summary, v.agent_confidence, v.is_false_positive, v.bank_analysis
+        FROM disagreements d
+        LEFT JOIN LATERAL (
+            SELECT resolution_summary, agent_confidence, is_false_positive, bank_analysis
+            FROM disagreement_validations
+            WHERE disagreement_id = d.disagreement_id {validation_filter}
+            ORDER BY agent_confidence DESC NULLS LAST
+            LIMIT 1
+        ) v ON true
+        {where}
+        ORDER BY d.window_end DESC, d.scale DESC
         LIMIT :limit OFFSET :offset
     """)
 
     total = (await db.execute(count_sql, params)).scalar()
     rows = await db.execute(data_sql, params)
     cols = ["disagreement_id", "group_key", "geography", "window_start", "window_end",
-            "scale", "n_banks", "sentiment_spread", "bank_positions"]
+            "scale", "n_banks", "sentiment_spread", "bank_positions",
+            "resolution_summary", "agent_confidence", "is_false_positive", "bank_analysis"]
     data = [dict(zip(cols, r)) for r in rows]
     return {"data": data, "total": total, "page": page, "limit": limit}
 

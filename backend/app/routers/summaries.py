@@ -44,6 +44,41 @@ async def list_topic_summaries(
     cols = ["id", "topic", "window_start", "window_end", "bullets",
             "bullet_count", "source_orgs", "kp_count", "label_map"]
     data = [dict(zip(cols, r)) for r in rows]
+
+    all_kp_ids: list[str] = []
+    for s in data:
+        all_kp_ids.extend((s.get("label_map") or {}).values())
+
+    if all_kp_ids:
+        enrich_rows = await db.execute(
+            text("""
+                SELECT key_point_id, email_content_hash, key_point_citation,
+                       effective_source_org, email_sent_dt
+                FROM key_points_full WHERE key_point_id::text = ANY(:ids)
+            """),
+            {"ids": all_kp_ids},
+        )
+        kp_meta: dict[str, dict] = {
+            str(r[0]): {
+                "key_point_id": str(r[0]),
+                "email_content_hash": r[1],
+                "key_point_citation": r[2],
+                "effective_source_org": r[3],
+                "email_sent_dt": str(r[4]) if r[4] else None,
+            }
+            for r in enrich_rows
+        }
+        for s in data:
+            lm = s.get("label_map") or {}
+            s["label_map_enriched"] = {
+                label: kp_meta[kp_id]
+                for label, kp_id in lm.items()
+                if kp_id in kp_meta
+            }
+    else:
+        for s in data:
+            s["label_map_enriched"] = {}
+
     return {"data": data, "total": total, "page": page, "limit": limit}
 
 
@@ -80,4 +115,39 @@ async def list_trade_summaries(
     cols = ["id", "group_key", "window_start", "window_end", "bullets",
             "bullet_count", "source_orgs", "kp_count", "label_map"]
     data = [dict(zip(cols, r)) for r in rows]
+
+    all_ti_ids: list[str] = []
+    for s in data:
+        all_ti_ids.extend((s.get("label_map") or {}).values())
+
+    if all_ti_ids:
+        enrich_rows = await db.execute(
+            text("""
+                SELECT trade_idea_id, email_content_hash, trade_idea_citation,
+                       effective_source_org, email_sent_dt
+                FROM trade_ideas_full WHERE trade_idea_id::text = ANY(:ids)
+            """),
+            {"ids": all_ti_ids},
+        )
+        ti_meta: dict[str, dict] = {
+            str(r[0]): {
+                "trade_idea_id": str(r[0]),
+                "email_content_hash": r[1],
+                "trade_idea_citation": r[2],
+                "effective_source_org": r[3],
+                "email_sent_dt": str(r[4]) if r[4] else None,
+            }
+            for r in enrich_rows
+        }
+        for s in data:
+            lm = s.get("label_map") or {}
+            s["label_map_enriched"] = {
+                label: ti_meta[ti_id]
+                for label, ti_id in lm.items()
+                if ti_id in ti_meta
+            }
+    else:
+        for s in data:
+            s["label_map_enriched"] = {}
+
     return {"data": data, "total": total, "page": page, "limit": limit}

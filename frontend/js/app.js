@@ -79,7 +79,7 @@ function app() {
     selectedSentiments: [],
     timeRef: '',
     selectedAssetClasses: [],
-    confirmedOnly: true,
+    confirmedOnly: false,
 
     // Meta (populated on init)
     banks: [],
@@ -88,6 +88,16 @@ function app() {
     sentimentOptions: ['very bearish', 'bearish', 'neutral', 'bullish', 'very bullish'],
     assetClassOptions: ['Rates', 'FX', 'Equities', 'Credit', 'Commodities'],
     timeRefOptions: ['past', 'present', 'future'],
+
+    // Filter collapse state (true = collapsed)
+    filterCollapsed: {
+      banks: true,
+      topics: true,
+      assetClass: true,
+      geos: true,
+      sentiment: true,
+      timeRef: true,
+    },
 
     // Email viewer
     emailOpen: false,
@@ -185,7 +195,7 @@ function app() {
       this.selectedSentiments = [];
       this.timeRef = '';
       this.selectedAssetClasses = [];
-      this.confirmedOnly = true;
+      this.confirmedOnly = false;
       this.page = 1;
       this.loadItems();
     },
@@ -194,6 +204,19 @@ function app() {
     nextPage() { if (this.page < this.totalPages) { this.page++; this.loadItems(); } },
 
     get totalPages() { return Math.max(1, Math.ceil(this.total / this.limit)); },
+
+    get activeFilterCount() {
+      let c = 0;
+      if (this.dateFrom || this.dateTo) c++;
+      c += this.selectedBanks.length;
+      c += this.selectedTopics.length;
+      c += this.selectedAssetClasses.length;
+      c += this.selectedGeos.length;
+      c += this.selectedSentiments.length;
+      if (this.timeRef) c++;
+      if (this.confirmedOnly) c++;
+      return c;
+    },
 
     async openEmail(hash, citation = null) {
       this.emailOpen = true;
@@ -219,6 +242,32 @@ function app() {
       this.currentCitation = null;
     },
 
+    highlightRelatedCitation(citation) {
+      if (!citation) return;
+      this.currentCitation = citation;
+      this.$nextTick(() => {
+        const mark = document.getElementById('citation-mark');
+        if (mark) mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    },
+
+    async viewInBrowse(tabId, itemId) {
+      this.closeEmail();
+      this.mode = 'browse';
+      this.tab = tabId;
+      this.loading = true;
+      try {
+        const fetcher = tabId === 'key-points' ? api.keyPoint : api.tradeIdea;
+        const item = await fetcher(itemId);
+        this.items = [item];
+        this.total = 1;
+      } catch (e) {
+        this.errorMsg = e.message;
+      } finally {
+        this.loading = false;
+      }
+    },
+
     highlightedBody() {
       const body = this.currentEmail?.email_body ?? '';
       const cite = this.currentCitation;
@@ -236,6 +285,47 @@ function app() {
     },
 
     // Display helpers
+    aggregateBankPositions(positions) {
+      if (!positions || !positions.length) return [];
+      const byBank = {};
+      for (const p of positions) {
+        const org = p.source_org;
+        if (!byBank[org]) {
+          byBank[org] = { sentiments: {}, count: 0 };
+        }
+        byBank[org].count++;
+        const s = p.sentiment || 'unknown';
+        byBank[org].sentiments[s] = (byBank[org].sentiments[s] || 0) + 1;
+      }
+      return Object.entries(byBank).map(([org, data]) => {
+        const dominant = Object.entries(data.sentiments)
+          .sort((a, b) => b[1] - a[1])[0][0];
+        return { source_org: org, sentiment: dominant, count: data.count };
+      });
+    },
+
+    renderBullet(bullet, summary) {
+      const lme = summary.label_map_enriched || {};
+      const esc = s => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      let html = esc(bullet);
+      html = html.replace(/\[(\d+)\]/g, (match, n) => {
+        const meta = lme[n] || lme[`[${n}]`];
+        if (!meta) return `<span class="text-gray-400">${match}</span>`;
+        const hash = (meta.email_content_hash || '').replace(/"/g, '&quot;');
+        const cite = (meta.key_point_citation || meta.trade_idea_citation || '').replace(/"/g, '&quot;');
+        const org = (meta.effective_source_org || '').replace(/"/g, '&quot;');
+        return (
+          `<button class="inline-flex items-center justify-center w-4 h-4 text-[10px] bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full font-bold ml-0.5 leading-none align-super cursor-pointer" ` +
+          `data-email-hash="${hash}" data-email-citation="${cite}" ` +
+          `title="${org}">[${n}]</button>`
+        );
+      });
+      // Defense-in-depth: bullet is already escaped and metadata sits in quoted
+      // attributes, but this content is LLM-generated from emails — sanitize the
+      // final HTML (same as renderMarkdown) so x-html can never execute markup.
+      return DOMPurify.sanitize(html);
+    },
+
     sentimentClass(s) {
       return {
         'very bearish': 'bg-red-100 text-red-800',
