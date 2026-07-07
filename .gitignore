@@ -249,3 +249,7 @@ kubeconfig*
 # internal ops docs — keep local
 DEPLOY.md
 CLAUDE.md
+
+# Kubernetes — real secret values and the personal learning guide stay local
+deploy/k8s/02-secret.yaml
+deploy/k8s/GUIDE.md

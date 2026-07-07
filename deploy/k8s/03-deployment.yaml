@@ -1,0 +1,39 @@
+# A Deployment manages a set of identical Pods (replicas). It owns a Pod *template*;
+# change the template and it rolls out new pods automatically.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: macro-rag
+  namespace: macro-rag
+spec:
+  replicas: 1                          # one pod for now; try scaling later
+  selector:
+    matchLabels:
+      app: macro-rag                   # this Deployment owns pods with this label
+  template:
+    metadata:
+      labels:
+        app: macro-rag                 # the Service (04) finds pods by this label
+    spec:
+      containers:
+        - name: macro-rag
+          image: macro-rag:v1
+          imagePullPolicy: IfNotPresent  # use the LOCAL image, don't pull from a registry
+          ports:
+            - containerPort: 8000        # uvicorn listens here
+          envFrom:
+            - configMapRef:
+                name: macro-rag-config   # inject all ConfigMap keys as env
+            - secretRef:
+                name: macro-rag-secrets  # inject all Secret keys as env
+          readinessProbe:                # "is it ready for traffic?" — gates the Service
+            httpGet: { path: /, port: 8000 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:                 # "is it still alive?" — restarts if it hangs
+            httpGet: { path: /, port: 8000 }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }   # what it's guaranteed
+            limits:   { cpu: "1",  memory: 1536Mi }   # the ceiling

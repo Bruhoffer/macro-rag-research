@@ -1,0 +1,6 @@
+# A Namespace is a folder inside the cluster. Putting all our objects in one
+# namespace keeps them grouped and easy to delete together later.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: macro-rag

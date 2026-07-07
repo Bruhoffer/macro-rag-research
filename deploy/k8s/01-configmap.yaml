@@ -1,0 +1,14 @@
+# A ConfigMap holds NON-secret config as key/value pairs. The Deployment injects
+# these as environment variables (envFrom). Change config without rebuilding the image.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: macro-rag-config
+  namespace: macro-rag
+data:
+  ACCESS_MODE: "open"                 # public demo: browse/chat need no key locally
+  CHAT_DAILY_BUDGET_USD: "5"
+  ALLOWED_ORIGIN: "http://localhost"
+  # Local only: the cluster isn't internet-exposed, so trust any proxy. On DOKS,
+  # set this to the ingress-nginx pod CIDR (see ARCHITECTURE.html appendix).
+  FORWARDED_ALLOW_IPS: "*"

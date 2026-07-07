@@ -1,0 +1,15 @@
+# A Service gives a stable internal name/IP for pods that keep changing. It load-balances
+# across every pod matching the selector. Type ClusterIP = internal-only (the ingress
+# reaches it; the outside world does not).
+apiVersion: v1
+kind: Service
+metadata:
+  name: macro-rag
+  namespace: macro-rag
+spec:
+  type: ClusterIP
+  selector:
+    app: macro-rag        # send traffic to pods with this label
+  ports:
+    - port: 80            # the Service's port
+      targetPort: 8000    # forwarded to the container's port

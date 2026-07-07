@@ -1,0 +1,20 @@
+# An Ingress is a routing RULE the ingress controller enforces: "requests for this
+# host/path go to this Service." This is the public front door.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: macro-rag
+  namespace: macro-rag
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: localhost           # DOKS later: <LB_IP>.sslip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: macro-rag
+                port:
+                  number: 80    # matches the Service port above
