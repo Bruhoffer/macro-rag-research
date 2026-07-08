@@ -33,3 +33,12 @@ async def list_geographies(db: Db) -> list[dict[str, Any]]:
         "SELECT geography_name, description FROM geographies WHERE is_active = true ORDER BY geography_name"
     ))
     return [{"name": r[0], "description": r[1]} for r in rows]
+
+
+@router.get("/date-range")
+async def date_range(db: Db) -> dict[str, Any]:
+    row = await db.execute(text(
+        "SELECT min(email_sent_dt)::date, max(email_sent_dt)::date FROM emails"
+    ))
+    r = row.fetchone()
+    return {"earliest": str(r[0]) if r[0] else None, "latest": str(r[1]) if r[1] else None}

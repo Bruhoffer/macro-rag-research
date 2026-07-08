@@ -7,9 +7,9 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js" integrity="sha384-NNQgBjjuhtXzPmmy4gurS5X7P4uTt1DThyevz4Ua0IVK5+kazYQI1W27JHjbbxQz" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js" integrity="sha384-+VfUPEb0PdtChMwmBcBmykRMDd+v6D/oFmB3rZM/puCMDYcIvF968OimRh4KQY9a" crossorigin="anonymous"></script>
-  <script src="/js/api.js?v=5"></script>
-  <script src="/js/chat.js?v=5"></script>
-  <script src="/js/app.js?v=5"></script>
+  <script src="/js/api.js?v=7"></script>
+  <script src="/js/chat.js?v=7"></script>
+  <script src="/js/app.js?v=8"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
   <style>
     [x-cloak] { display: none !important; }
@@ -70,19 +70,12 @@
       <!-- Browse filters -->
       <div x-show="mode === 'browse'" class="p-4 space-y-4">
 
-        <!-- Active filter indicator -->
-        <div x-show="activeFilterCount > 0" class="flex items-center justify-between bg-slate-700/50 rounded-lg px-3 py-2">
-          <span class="text-xs text-blue-400">
-            <span x-text="activeFilterCount"></span> filter<span x-show="activeFilterCount !== 1">s</span> active
-          </span>
-          <button @click="clearFilters()" class="text-xs text-slate-400 hover:text-white underline">Clear</button>
-        </div>
-
         <!-- Date range (always open) -->
         <div>
           <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">Date Range</p>
-          <input x-model="dateFrom" @change="applyFilters()" type="date" class="w-full bg-slate-700 text-slate-200 text-xs rounded px-2 py-1.5 mb-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-          <input x-model="dateTo"   @change="applyFilters()" type="date" class="w-full bg-slate-700 text-slate-200 text-xs rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          <input x-model="dateFrom" @change="applyFilters()" type="date" :min="dataDateMin" :max="dateTo || dataDateMax" class="w-full bg-slate-700 text-slate-200 text-xs rounded px-2 py-1.5 mb-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          <input x-model="dateTo"   @change="applyFilters()" type="date" :min="dateFrom || dataDateMin" :max="dataDateMax" class="w-full bg-slate-700 text-slate-200 text-xs rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          <p x-show="dataDateMin" class="text-[10px] text-slate-500 mt-1" x-text="'Data: ' + fmtDateShort(dataDateMin) + ' – ' + fmtDateShort(dataDateMax)"></p>
         </div>
 
         <!-- Banks (collapsible) -->
@@ -211,12 +204,15 @@
           </label>
         </div>
 
-        <!-- Clear filters (shown only when no active filter indicator is visible) -->
+        <!-- Clear filters — always at bottom, shows count when filters are active -->
         <button
-          x-show="activeFilterCount === 0"
           @click="clearFilters()"
-          class="w-full text-xs text-slate-400 hover:text-white border border-slate-600 rounded py-1.5 transition-colors"
-        >Clear filters</button>
+          class="w-full text-xs border rounded py-1.5 transition-colors"
+          :class="activeFilterCount > 0 ? 'bg-slate-700/50 text-blue-400 border-blue-500/30 hover:text-white' : 'text-slate-400 hover:text-white border-slate-600'"
+        >
+          <span x-show="activeFilterCount > 0"><span x-text="activeFilterCount"></span> filter<span x-show="activeFilterCount !== 1">s</span> active · Clear</span>
+          <span x-show="activeFilterCount === 0">Clear filters</span>
+        </button>
       </div>
 
       <!-- Chat sidebar -->
@@ -260,6 +256,12 @@
             :class="summaryType === 'trade' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'"
             class="text-xs px-3 py-1 rounded-full transition-colors"
           >Trade summaries</button>
+        </div>
+
+        <!-- Back to results banner (shown after viewInBrowse drills into a single item) -->
+        <div x-show="_stashedList" x-transition class="mb-3 flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm text-blue-700">
+          <button @click="backToResults()" class="font-medium hover:underline">&larr; Back to results</button>
+          <span class="text-blue-400">You're viewing a single item</span>
         </div>
 
         <!-- Stats bar -->

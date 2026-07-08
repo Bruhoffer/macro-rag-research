@@ -85,6 +85,8 @@ function app() {
     banks: [],
     topics: [],
     geos: [],
+    dataDateMin: '',
+    dataDateMax: '',
     sentimentOptions: ['very bearish', 'bearish', 'neutral', 'bullish', 'very bullish'],
     assetClassOptions: ['Rates', 'FX', 'Equities', 'Credit', 'Commodities'],
     timeRefOptions: ['past', 'present', 'future'],
@@ -112,12 +114,14 @@ function app() {
 
     async loadMeta() {
       try {
-        const [bs, ts, gs] = await Promise.all([
-          api.metaBanks(), api.metaTopics(), api.metaGeos(),
+        const [bs, ts, gs, dr] = await Promise.all([
+          api.metaBanks(), api.metaTopics(), api.metaGeos(), api.metaDateRange(),
         ]);
         this.banks = bs;
         this.topics = ts;
         this.geos = gs;
+        this.dataDateMin = dr.earliest || '';
+        this.dataDateMax = dr.latest || '';
       } catch (e) {
         console.error('Meta load failed:', e);
       }
@@ -171,6 +175,7 @@ function app() {
     setTab(id) {
       this.tab = id;
       this.page = 1;
+      this._stashedList = null;
       this.loadItems();
     },
 
@@ -182,6 +187,7 @@ function app() {
 
     applyFilters() {
       this.page = 1;
+      this._stashedList = null;
       this.loadItems();
     },
 
@@ -197,6 +203,7 @@ function app() {
       this.selectedAssetClasses = [];
       this.confirmedOnly = false;
       this.page = 1;
+      this._stashedList = null;
       this.loadItems();
     },
 
@@ -251,7 +258,11 @@ function app() {
       });
     },
 
+    // Stashed list state for "back to results" after viewing a single item
+    _stashedList: null,
+
     async viewInBrowse(tabId, itemId) {
+      this._stashedList = { tab: this.tab, items: this.items, total: this.total, page: this.page };
       this.closeEmail();
       this.mode = 'browse';
       this.tab = tabId;
@@ -265,6 +276,18 @@ function app() {
         this.errorMsg = e.message;
       } finally {
         this.loading = false;
+      }
+    },
+
+    backToResults() {
+      if (this._stashedList) {
+        this.tab = this._stashedList.tab;
+        this.items = this._stashedList.items;
+        this.total = this._stashedList.total;
+        this.page = this._stashedList.page;
+        this._stashedList = null;
+      } else {
+        this.loadItems();
       }
     },
 

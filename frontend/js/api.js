@@ -45,10 +45,15 @@ async function _get(path, params = {}, _retried = false) {
       url.searchParams.set(k, String(v));
     }
   }
+  const sentKey = sessionStorage.getItem(_storageKey(path)); // the key THIS request used
   const r = await fetch(url, { headers: authHeaders(path) });
   if (r.status === 401 && !_retried) {
-    // Drop the rejected key only if nobody else has already replaced it.
-    if (authHeaders(path).Authorization) sessionStorage.removeItem(_storageKey(path));
+    // Drop the rejected key only if it's still the one we sent. A sibling
+    // request's 401 may have already prompted and stored a fresh, valid key
+    // (parallel admin loads) — don't clobber it and re-prompt for each call.
+    if (sentKey && sessionStorage.getItem(_storageKey(path)) === sentKey) {
+      sessionStorage.removeItem(_storageKey(path));
+    }
     if (await promptForKey(path)) return _get(path, params, true);
   }
   if (!r.ok) {
@@ -70,6 +75,7 @@ const api = {
   metaBanks:      () => _get('/api/meta/source-orgs'),
   metaTopics:     () => _get('/api/meta/topics'),
   metaGeos:       () => _get('/api/meta/geographies'),
+  metaDateRange:  () => _get('/api/meta/date-range'),
 
   // Admin / observability
   adminChatTraces: (p) => _get('/api/admin/chat-traces', p),
