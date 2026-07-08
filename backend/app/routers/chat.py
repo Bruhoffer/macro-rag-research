@@ -15,6 +15,7 @@ Event types:
 import json
 import sys
 import time
+from datetime import date
 from typing import Annotated, Any, AsyncGenerator
 
 import anthropic
@@ -281,10 +282,10 @@ async def _get_disagreements(db: AsyncSession, input_: dict) -> list[dict]:
         params["scale"] = input_["scale"]
     if input_.get("date_from"):
         filters.append("d.window_end >= :date_from")
-        params["date_from"] = input_["date_from"]
+        params["date_from"] = date.fromisoformat(input_["date_from"])
     if input_.get("date_to"):
         filters.append("d.window_start <= :date_to")
-        params["date_to"] = input_["date_to"]
+        params["date_to"] = date.fromisoformat(input_["date_to"])
 
     where = "WHERE " + " AND ".join(filters)
     sql = text(f"""
@@ -313,7 +314,7 @@ async def _get_topic_summary(db: AsyncSession, input_: dict) -> list[dict]:
         params["topic"] = input_["topic"]
     if input_.get("date"):
         filters.append("window_start::date <= :date AND window_end::date >= :date")
-        params["date"] = input_["date"]
+        params["date"] = date.fromisoformat(input_["date"])
 
     where = ("WHERE " + " AND ".join(filters)) if filters else ""
     sql = text(f"""
@@ -417,10 +418,10 @@ async def _get_stats(db: AsyncSession, input_: dict) -> list[dict]:
         params["sentiment"] = f["sentiment"]
     if f.get("date_from"):
         filters.append("email_sent_dt >= :date_from")
-        params["date_from"] = f["date_from"]
+        params["date_from"] = date.fromisoformat(f["date_from"])
     if f.get("date_to"):
         filters.append("email_sent_dt <= :date_to")
-        params["date_to"] = f["date_to"]
+        params["date_to"] = date.fromisoformat(f["date_to"])
 
     template = _STATS_QUERIES.get(metric, "")
     if not template:

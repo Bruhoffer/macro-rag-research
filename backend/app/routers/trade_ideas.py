@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
@@ -49,10 +50,10 @@ async def list_trade_ideas(
         params["geo"] = geo
     if date_from:
         filters.append("email_sent_dt >= :date_from")
-        params["date_from"] = date_from
+        params["date_from"] = date.fromisoformat(date_from)
     if date_to:
         filters.append("email_sent_dt <= :date_to")
-        params["date_to"] = date_to
+        params["date_to"] = date.fromisoformat(date_to)
 
     where = ("WHERE " + " AND ".join(filters)) if filters else ""
     count_sql = text(f"SELECT count(*) FROM trade_ideas_full {where}")
@@ -82,7 +83,7 @@ async def get_trade_idea(trade_idea_id: str, db: Db) -> dict[str, Any]:
         SELECT ti.*, e.email_body, e.email_from
         FROM trade_ideas_full ti
         JOIN emails e ON e.email_content_hash = ti.email_content_hash
-        WHERE ti.trade_idea_id = CAST(:id AS uuid)
+        WHERE ti.trade_idea_id = :id
     """), {"id": trade_idea_id})
     r = row.fetchone()
     if not r:

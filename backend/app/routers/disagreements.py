@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
@@ -45,10 +46,10 @@ async def list_disagreements(
         params["scale"] = scale
     if date_from:
         filters.append("window_end >= :date_from")
-        params["date_from"] = date_from
+        params["date_from"] = date.fromisoformat(date_from)
     if date_to:
         filters.append("window_start <= :date_to")
-        params["date_to"] = date_to
+        params["date_to"] = date.fromisoformat(date_to)
 
     where = ("WHERE " + " AND ".join(filters)) if filters else ""
     validation_filter = "AND is_false_positive = false" if confirmed_only else ""

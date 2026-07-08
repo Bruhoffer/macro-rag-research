@@ -3,6 +3,7 @@
 Mirrors the {data, total, page, limit} envelope used by the other routers.
 """
 
+from datetime import date
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -33,10 +34,10 @@ async def list_chat_traces(
         params["status"] = status
     if date_from:
         filters.append("ct.created_at >= :date_from")
-        params["date_from"] = date_from
+        params["date_from"] = date.fromisoformat(date_from)
     if date_to:
         filters.append("ct.created_at <= :date_to")
-        params["date_to"] = date_to
+        params["date_to"] = date.fromisoformat(date_to)
 
     where = ("WHERE " + " AND ".join(filters)) if filters else ""
     total = (await db.execute(text(f"SELECT count(*) FROM chat_traces ct {where}"), params)).scalar()
@@ -100,10 +101,10 @@ async def list_api_requests(
         params["path"] = f"%{path}%"
     if date_from:
         filters.append("created_at >= :date_from")
-        params["date_from"] = date_from
+        params["date_from"] = date.fromisoformat(date_from)
     if date_to:
         filters.append("created_at <= :date_to")
-        params["date_to"] = date_to
+        params["date_to"] = date.fromisoformat(date_to)
 
     where = ("WHERE " + " AND ".join(filters)) if filters else ""
     total = (await db.execute(text(f"SELECT count(*) FROM api_request_log {where}"), params)).scalar()

@@ -1,3 +1,4 @@
+from datetime import date as date_type
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
@@ -27,7 +28,7 @@ async def list_topic_summaries(
         params["topic"] = topic
     if date:
         filters.append("window_start::date <= :date AND window_end::date >= :date")
-        params["date"] = date
+        params["date"] = date_type.fromisoformat(date)
 
     where = ("WHERE " + " AND ".join(filters)) if filters else ""
     data_sql = text(f"""
@@ -98,7 +99,7 @@ async def list_trade_summaries(
         params["asset_class"] = asset_class
     if date:
         filters.append("window_start::date <= :date AND window_end::date >= :date")
-        params["date"] = date
+        params["date"] = date_type.fromisoformat(date)
 
     where = ("WHERE " + " AND ".join(filters)) if filters else ""
     data_sql = text(f"""

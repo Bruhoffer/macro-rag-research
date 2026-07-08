@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 import numpy as np
@@ -261,10 +262,10 @@ async def search_trade_ideas(
         params["geos"] = geos
     if date_from:
         filters.append("email_sent_dt >= :date_from")
-        params["date_from"] = date_from
+        params["date_from"] = date.fromisoformat(date_from)
     if date_to:
         filters.append("email_sent_dt <= :date_to")
-        params["date_to"] = date_to
+        params["date_to"] = date.fromisoformat(date_to)
 
     ann_where = ("WHERE " + " AND ".join(filters)) if filters else ""
     bm25_where = "WHERE " + " AND ".join(["ti_fts @@ to_tsquery('english', :tsq)"] + filters)
@@ -381,10 +382,10 @@ async def search_emails(
         params["orgs"] = orgs
     if date_from:
         filters.append("email_sent_dt >= :date_from")
-        params["date_from"] = date_from
+        params["date_from"] = date.fromisoformat(date_from)
     if date_to:
         filters.append("email_sent_dt <= :date_to")
-        params["date_to"] = date_to
+        params["date_to"] = date.fromisoformat(date_to)
 
     where = ("WHERE " + " AND ".join(filters)) if filters else ""
 
@@ -522,10 +523,10 @@ def _build_filters(
         params["smax"] = sentiment_max
     if date_from:
         filters.append("email_sent_dt >= :date_from")
-        params["date_from"] = date_from
+        params["date_from"] = date.fromisoformat(date_from)
     if date_to:
         filters.append("email_sent_dt <= :date_to")
-        params["date_to"] = date_to
+        params["date_to"] = date.fromisoformat(date_to)
     if time_reference:
         filters.append("time_reference = :time_reference")
         params["time_reference"] = time_reference

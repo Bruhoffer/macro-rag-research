@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
@@ -56,10 +57,10 @@ async def list_key_points(
         params["geo"] = geo
     if date_from:
         filters.append("email_sent_dt >= :date_from")
-        params["date_from"] = date_from
+        params["date_from"] = date.fromisoformat(date_from)
     if date_to:
         filters.append("email_sent_dt <= :date_to")
-        params["date_to"] = date_to
+        params["date_to"] = date.fromisoformat(date_to)
     if time_reference:
         filters.append("time_reference = :time_reference")
         params["time_reference"] = time_reference
@@ -100,7 +101,7 @@ async def get_key_point(key_point_id: str, db: Db) -> dict[str, Any]:
         SELECT kp.*, e.email_body, e.email_from
         FROM key_points_full kp
         JOIN emails e ON e.email_content_hash = kp.email_content_hash
-        WHERE kp.key_point_id = CAST(:id AS uuid)
+        WHERE kp.key_point_id = :id
     """), {"id": key_point_id})
     r = row.fetchone()
     if not r:
