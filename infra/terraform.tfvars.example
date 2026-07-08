@@ -1,0 +1,15 @@
+# Copy this to terraform.tfvars (gitignored) and fill in real values.
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# Alternatively, keep the token OUT of any file and export it instead:
+#   export TF_VAR_do_token="dop_v1_..."
+# then omit the do_token line below.
+
+do_token      = "dop_v1_REPLACE_ME"
+my_ip         = "REPLACE_ME"            # curl ifconfig.me  → e.g. 203.0.113.7
+registry_name = "macro-rag-REPLACE_ME"  # must be globally unique across all DigitalOcean
+
+# Optional overrides (defaults are fine):
+# region     = "sgp1"
+# node_count = 2
+# node_size  = "s-2vcpu-4gb"
