@@ -6,6 +6,12 @@ function _storageKey(path) {
   return path.startsWith('/api/admin') ? 'mr_admin_key' : 'mr_api_key';
 }
 
+// How a missing key is obtained. Default is a browser prompt; a page can
+// override this (e.g. the admin dashboard swaps in its own key gate so a 401
+// shows the gate instead of a native dialog). May return a string or a promise.
+let _promptImpl = (label) => window.prompt(label) || '';
+function setKeyPrompt(fn) { _promptImpl = fn; }
+
 // One shared prompt per storage key at a time. Parallel 401s (e.g. the admin
 // dashboard's loadStats + loadChats) must not each pop their own dialog and
 // clobber each other's key — they all await the same prompt.
@@ -20,7 +26,7 @@ function promptForKey(path) {
     const existing = sessionStorage.getItem(storageKey);
     if (existing) return existing;
     const label = path.startsWith('/api/admin') ? 'Enter ADMIN key' : 'Enter API key';
-    const k = (window.prompt(label) || '').trim();
+    const k = ((await _promptImpl(label)) || '').trim();
     if (k) sessionStorage.setItem(storageKey, k);
     return k;
   })();
@@ -82,4 +88,7 @@ const api = {
   adminChatTrace:  (id) => _get(`/api/admin/chat-traces/${id}`),
   adminApiRequests:(p) => _get('/api/admin/api-requests', p),
   adminStats:      () => _get('/api/admin/stats'),
+
+  // Let a page supply its own key-entry UI instead of window.prompt.
+  setKeyPrompt,
 };

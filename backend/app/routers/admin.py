@@ -36,7 +36,8 @@ async def list_chat_traces(
         filters.append("ct.created_at >= :date_from")
         params["date_from"] = date.fromisoformat(date_from)
     if date_to:
-        filters.append("ct.created_at <= :date_to")
+        # inclusive of the whole end day (date_to is midnight; add a day, use <)
+        filters.append("ct.created_at < :date_to + INTERVAL '1 day'")
         params["date_to"] = date.fromisoformat(date_to)
 
     where = ("WHERE " + " AND ".join(filters)) if filters else ""
@@ -103,7 +104,8 @@ async def list_api_requests(
         filters.append("created_at >= :date_from")
         params["date_from"] = date.fromisoformat(date_from)
     if date_to:
-        filters.append("created_at <= :date_to")
+        # inclusive of the whole end day (date_to is midnight; add a day, use <)
+        filters.append("created_at < :date_to + INTERVAL '1 day'")
         params["date_to"] = date.fromisoformat(date_to)
 
     where = ("WHERE " + " AND ".join(filters)) if filters else ""

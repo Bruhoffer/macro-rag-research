@@ -20,7 +20,7 @@
   <nav class="fixed top-0 left-0 right-0 h-14 z-30 bg-slate-900 flex items-center px-5 gap-4 shadow-lg">
     <span class="text-white font-semibold text-sm tracking-wide shrink-0">Macro RAG · Admin</span>
     <div class="flex-1"></div>
-    <div class="flex rounded-lg overflow-hidden border border-slate-600 shrink-0">
+    <div x-show="authed" class="flex rounded-lg overflow-hidden border border-slate-600 shrink-0">
       <button @click="switchTab('chats')"
         :class="tab === 'chats' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
         class="px-4 py-1.5 text-xs font-medium transition-colors">Chat traces</button>
@@ -28,16 +28,42 @@
         :class="tab === 'requests' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
         class="px-4 py-1.5 text-xs font-medium transition-colors">API requests</button>
     </div>
-    <button @click="refresh()" :disabled="refreshing"
+    <button x-show="authed" @click="refresh()" :disabled="refreshing"
       class="text-xs text-slate-300 hover:text-white shrink-0 disabled:opacity-50">
       <span x-show="!refreshing">↻ Refresh</span>
       <span x-show="refreshing">Refreshing…</span>
     </button>
+    <span x-show="authed" class="flex items-center gap-2 shrink-0">
+      <span class="text-xs text-green-400">● Connected</span>
+      <button @click="signOut()" class="text-xs text-slate-300 hover:text-white">Sign out</button>
+    </span>
     <a href="/" class="text-xs text-slate-300 hover:text-white shrink-0">← Back to app</a>
   </nav>
 
+  <!-- ═══════════════════════════ KEY GATE ═══════════════════════════ -->
+  <!-- Same security model as the rest of the app: the passcode is validated
+       against /api/admin/stats, then held in sessionStorage['mr_admin_key']
+       and sent as a Bearer header. Entered once; cleared when the tab closes. -->
+  <div x-show="!authed" class="pt-14 min-h-screen flex items-center justify-center px-4">
+    <form @submit.prevent="unlock()" class="w-full max-w-sm bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
+      <div class="text-center space-y-1">
+        <div class="text-2xl">🔒</div>
+        <div class="text-sm font-semibold">Enter admin passcode</div>
+        <div class="text-xs text-gray-400">Costs, queries and traces are private.</div>
+      </div>
+      <input x-model="keyInput" type="password" autocomplete="off" autofocus placeholder="Admin passcode"
+             class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      <button type="submit" :disabled="unlocking || !keyInput.trim()"
+              class="w-full bg-blue-600 text-white text-sm font-medium rounded-lg px-3 py-2 hover:bg-blue-700 disabled:opacity-50">
+        <span x-show="!unlocking">Unlock</span>
+        <span x-show="unlocking">Checking…</span>
+      </button>
+      <div x-show="authError" class="text-xs text-red-600 text-center" x-text="authError"></div>
+    </form>
+  </div>
+
   <!-- ═══════════════════════════ CONTENT ═══════════════════════════ -->
-  <main class="pt-14 min-h-screen">
+  <main x-show="authed" class="pt-14 min-h-screen">
     <div class="max-w-6xl mx-auto p-6 space-y-6">
 
       <!-- ── STATS STRIP ── -->
@@ -95,6 +121,11 @@
             <option value="error">error</option>
             <option value="max_rounds">max_rounds</option>
           </select>
+          <input type="date" x-model="chatDateFrom" @change="chatPage = 1; loadChats()"
+                 class="text-xs border border-gray-200 rounded px-2 py-1" title="from date" />
+          <span class="text-xs text-gray-400">→</span>
+          <input type="date" x-model="chatDateTo" @change="chatPage = 1; loadChats()"
+                 class="text-xs border border-gray-200 rounded px-2 py-1" title="to date (inclusive)" />
           <span class="text-xs text-gray-400" x-show="chatsLoading">loading…</span>
         </div>
         <table class="w-full text-sm">
@@ -147,6 +178,11 @@
           <span class="text-sm font-semibold">API requests</span>
           <input x-model="reqPath" @keydown.enter="reqPage = 1; loadRequests()" placeholder="filter path…"
                  class="text-xs border border-gray-200 rounded px-2 py-1" />
+          <input type="date" x-model="reqDateFrom" @change="reqPage = 1; loadRequests()"
+                 class="text-xs border border-gray-200 rounded px-2 py-1" title="from date" />
+          <span class="text-xs text-gray-400">→</span>
+          <input type="date" x-model="reqDateTo" @change="reqPage = 1; loadRequests()"
+                 class="text-xs border border-gray-200 rounded px-2 py-1" title="to date (inclusive)" />
           <span class="text-xs text-gray-400" x-show="reqLoading">loading…</span>
         </div>
         <table class="w-full text-sm">

@@ -4,12 +4,20 @@ function adminApp() {
     stats: null,
     refreshing: false,
 
+    // auth gate — one passcode, entered once (see api.js setKeyPrompt)
+    authed: false,
+    keyInput: '',
+    authError: '',
+    unlocking: false,
+
     // chat traces
     chats: [],
     chatTotal: 0,
     chatPage: 1,
     chatLimit: 20,
     chatStatus: '',
+    chatDateFrom: '',
+    chatDateTo: '',
     chatsLoading: false,
 
     // selected trace detail (drawer)
@@ -22,10 +30,48 @@ function adminApp() {
     reqPage: 1,
     reqLimit: 50,
     reqPath: '',
+    reqDateFrom: '',
+    reqDateTo: '',
     reqLoading: false,
 
     async init() {
-      await Promise.all([this.loadStats(), this.loadChats()]);
+      // Show our own key gate on a 401 instead of a native window.prompt.
+      api.setKeyPrompt(() => { this.authed = false; return ''; });
+      if (sessionStorage.getItem('mr_admin_key')) await this.load();
+    },
+
+    // Validate the current key by loading stats (throws on 401), then the panels.
+    async load() {
+      try {
+        this.stats = await api.adminStats();   // 401 here throws → gate stays
+        this.authed = true;
+        await this.loadChats();
+      } catch { this.authed = false; }
+    },
+
+    async unlock() {
+      const k = this.keyInput.trim();
+      if (!k) return;
+      this.unlocking = true;
+      this.authError = '';
+      sessionStorage.setItem('mr_admin_key', k);
+      await this.load();
+      if (this.authed) {
+        this.keyInput = '';
+      } else {
+        sessionStorage.removeItem('mr_admin_key');
+        this.authError = 'Invalid key';
+      }
+      this.unlocking = false;
+    },
+
+    signOut() {
+      sessionStorage.removeItem('mr_admin_key');
+      this.authed = false;
+      this.stats = null;
+      this.chats = [];
+      this.requests = [];
+      this.detail = null;
     },
 
     // The dashboard fetches on load only (no polling) — re-fetch the active views.
@@ -46,6 +92,8 @@ function adminApp() {
       try {
         const r = await api.adminChatTraces({
           status: this.chatStatus || null,
+          date_from: this.chatDateFrom || null,
+          date_to: this.chatDateTo || null,
           page: this.chatPage,
           limit: this.chatLimit,
         });
@@ -60,6 +108,8 @@ function adminApp() {
       try {
         const r = await api.adminApiRequests({
           path: this.reqPath || null,
+          date_from: this.reqDateFrom || null,
+          date_to: this.reqDateTo || null,
           page: this.reqPage,
           limit: this.reqLimit,
         });
