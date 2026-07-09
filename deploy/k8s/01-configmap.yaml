@@ -8,7 +8,7 @@ metadata:
 data:
   ACCESS_MODE: "open"                 # public demo: browse/chat need no key locally
   CHAT_DAILY_BUDGET_USD: "5"
-  ALLOWED_ORIGIN: "http://localhost"
+  ALLOWED_ORIGIN: "https://168.144.48.142.sslip.io"
   # Local only: the cluster isn't internet-exposed, so trust any proxy. On DOKS,
   # set this to the ingress-nginx pod CIDR (see ARCHITECTURE.html appendix).
-  FORWARDED_ALLOW_IPS: "*"
+  FORWARDED_ALLOW_IPS: "10.150.0.0/24"

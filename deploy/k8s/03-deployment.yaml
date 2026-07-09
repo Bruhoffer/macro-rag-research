@@ -17,8 +17,8 @@ spec:
     spec:
       containers:
         - name: macro-rag
-          image: macro-rag:v1
-          imagePullPolicy: IfNotPresent  # use the LOCAL image, don't pull from a registry
+          image: registry.digitalocean.com/macro-rag-research/macro-rag:v1
+          imagePullPolicy: Always
           ports:
             - containerPort: 8000        # uvicorn listens here
           envFrom:

@@ -5,10 +5,16 @@ kind: Ingress
 metadata:
   name: macro-rag
   namespace: macro-rag
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
   ingressClassName: nginx
+  tls:
+    - hosts:
+        - 168.144.48.142.sslip.io
+      secretName: macro-rag-tls
   rules:
-    - host: localhost           # DOKS later: <LB_IP>.sslip.io
+    - host: 168.144.48.142.sslip.io
       http:
         paths:
           - path: /
